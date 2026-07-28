@@ -3,9 +3,8 @@ import {
     Page,
     PageBlock,
     PageLayout,
-    PageTitle,
 } from '@vendure/dashboard';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // ---- Types ----
 
@@ -97,9 +96,13 @@ function TenantListPage() {
 
     return (
         <Page pageId="tenants-list">
-            <PageTitle>Tenants</PageTitle>
             <PageLayout>
                 {/* Stats row */}
+                <PageBlock column="full" blockId="tenant-header">
+                    <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 8px 0' }}>Tenants</h1>
+                    <p style={{ color: '#666', margin: 0, fontSize: '14px' }}>Manage your multi-tenant organizations, their channels and administrators.</p>
+                </PageBlock>
+
                 <PageBlock column="full" blockId="tenant-stats">
                     <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                         {[
@@ -143,8 +146,8 @@ function TenantListPage() {
                             </thead>
                             <tbody>
                                 {tenants.map(t => (
-                                    <>
-                                        <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }} onClick={() => toggle(t.id)}>
+                                    <React.Fragment key={t.id}>
+                                        <tr style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }} onClick={() => toggle(t.id)}>
                                             <td style={td}>
                                                 <span style={{ fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block', transform: expandedId === t.id ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                                                     &#9654;
@@ -166,7 +169,7 @@ function TenantListPage() {
                                             </td>
                                         </tr>
                                         {expandedId === t.id && (
-                                            <tr key={`${t.id}-detail`}>
+                                            <tr>
                                                 <td colSpan={8} style={{ padding: '0 16px 16px 40px', background: '#fafbfc' }}>
                                                     <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', paddingTop: '12px' }}>
                                                         {/* Channels Card */}
@@ -228,7 +231,7 @@ function TenantListPage() {
                                                 </td>
                                             </tr>
                                         )}
-                                    </>
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>
