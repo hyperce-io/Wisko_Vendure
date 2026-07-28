@@ -4,193 +4,231 @@ import {
     PageBlock,
     PageLayout,
     PageTitle,
-    Button,
-    Card,
-    Badge,
 } from '@vendure/dashboard';
-import { graphql } from '@/gql';
 import { useState, useEffect } from 'react';
 
-// ---- GraphQL Documents ----
+// ---- Types ----
 
-const GET_TENANTS = graphql(`
-    query GetTenants {
-        tenants {
-            items {
-                id
-                code
-                name
-                enabled
-                maxChannels
-                parentRoleId
-            }
-            totalItems
-        }
-    }
-`);
+interface TenantChannel {
+    id: string;
+    code: string;
+    token: string;
+    defaultCurrencyCode: string;
+    defaultLanguageCode: string;
+    pricesIncludeTax: boolean;
+}
 
-const UPDATE_TENANT = graphql(`
-    mutation UpdateTenant($input: UpdateTenantInput!) {
-        updateTenant(input: $input) {
-            id
-            name
-            enabled
-            maxChannels
-        }
-    }
-`);
+interface TenantAdmin {
+    id: string;
+    firstName: string;
+    lastName: string;
+    emailAddress: string;
+}
 
-// ---- Tenant List Page Component ----
+interface TenantData {
+    id: string;
+    code: string;
+    name: string;
+    enabled: boolean;
+    maxChannels: number;
+    parentRoleId: string;
+    channels: TenantChannel[];
+    administrators: TenantAdmin[];
+}
+
+// ---- API helper ----
+
+async function gqlFetch(query: string, variables?: any) {
+    const res = await fetch('/admin-api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query, variables }),
+    });
+    return res.json();
+}
+
+// ---- Tenant List Page ----
 
 function TenantListPage() {
-    const [tenants, setTenants] = useState<any[]>([]);
+    const [tenants, setTenants] = useState<TenantData[]>([]);
     const [totalItems, setTotalItems] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const fetchTenants = async () => {
         setLoading(true);
-        try {
-            const res = await fetch('/admin-api', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    query: `query {
-                        tenants {
-                            items { id code name enabled maxChannels parentRoleId }
-                            totalItems
-                        }
-                    }`,
-                }),
-            });
-            const json = await res.json();
-            if (json.errors) {
-                setError(json.errors[0]?.message || 'Failed to fetch tenants');
-            } else {
-                setTenants(json.data.tenants.items);
-                setTotalItems(json.data.tenants.totalItems);
+        const json = await gqlFetch(`query {
+            tenants {
+                items {
+                    id code name enabled maxChannels parentRoleId
+                    channels { id code token defaultCurrencyCode defaultLanguageCode pricesIncludeTax }
+                    administrators { id firstName lastName emailAddress }
+                }
+                totalItems
             }
-        } catch (err: any) {
-            setError(err.message);
+        }`);
+        if (json.errors) {
+            setError(json.errors[0]?.message || 'Failed to fetch');
+        } else {
+            setTenants(json.data.tenants.items);
+            setTotalItems(json.data.tenants.totalItems);
         }
         setLoading(false);
     };
 
-    const toggleEnabled = async (tenant: any) => {
-        try {
-            await fetch('/admin-api', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    query: `mutation UpdateTenant($input: UpdateTenantInput!) {
-                        updateTenant(input: $input) { id enabled }
-                    }`,
-                    variables: { input: { id: tenant.id, enabled: !tenant.enabled } },
-                }),
-            });
-            fetchTenants();
-        } catch (err: any) {
-            setError(err.message);
-        }
+    const toggleEnabled = async (t: TenantData) => {
+        await gqlFetch(
+            `mutation($input: UpdateTenantInput!) { updateTenant(input: $input) { id } }`,
+            { input: { id: t.id, enabled: !t.enabled } },
+        );
+        fetchTenants();
     };
 
-    useEffect(() => {
-        fetchTenants();
-    }, []);
+    useEffect(() => { fetchTenants(); }, []);
+
+    const toggle = (id: string) => setExpandedId(expandedId === id ? null : id);
+
+    const active = tenants.filter(t => t.enabled).length;
+    const suspended = tenants.filter(t => !t.enabled).length;
+    const totalChannels = tenants.reduce((sum, t) => sum + t.channels.length, 0);
+    const totalAdmins = tenants.reduce((sum, t) => sum + t.administrators.length, 0);
 
     return (
         <Page pageId="tenants-list">
             <PageTitle>Tenants</PageTitle>
             <PageLayout>
+                {/* Stats row */}
                 <PageBlock column="full" blockId="tenant-stats">
-                    <div style={{ display: 'flex', gap: '24px', marginBottom: '8px' }}>
-                        <div style={{ padding: '16px 24px', background: '#f8f9fa', borderRadius: '8px', minWidth: '140px' }}>
-                            <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Tenants</div>
-                            <div style={{ fontSize: '28px', fontWeight: 700 }}>{totalItems}</div>
-                        </div>
-                        <div style={{ padding: '16px 24px', background: '#f0fdf4', borderRadius: '8px', minWidth: '140px' }}>
-                            <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</div>
-                            <div style={{ fontSize: '28px', fontWeight: 700, color: '#16a34a' }}>
-                                {tenants.filter(t => t.enabled).length}
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        {[
+                            { label: 'Total Tenants', value: totalItems, bg: '#f8f9fa', color: '#111' },
+                            { label: 'Active', value: active, bg: '#f0fdf4', color: '#16a34a' },
+                            { label: 'Suspended', value: suspended, bg: '#fef2f2', color: '#dc2626' },
+                            { label: 'Total Channels', value: totalChannels, bg: '#eff6ff', color: '#2563eb' },
+                            { label: 'Total Admins', value: totalAdmins, bg: '#faf5ff', color: '#7c3aed' },
+                        ].map(s => (
+                            <div key={s.label} style={{ padding: '14px 22px', background: s.bg, borderRadius: '8px', minWidth: '120px' }}>
+                                <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>{s.label}</div>
+                                <div style={{ fontSize: '26px', fontWeight: 700, color: s.color }}>{s.value}</div>
                             </div>
-                        </div>
-                        <div style={{ padding: '16px 24px', background: '#fef2f2', borderRadius: '8px', minWidth: '140px' }}>
-                            <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suspended</div>
-                            <div style={{ fontSize: '28px', fontWeight: 700, color: '#dc2626' }}>
-                                {tenants.filter(t => !t.enabled).length}
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 </PageBlock>
 
+                {/* Table */}
                 <PageBlock column="full" blockId="tenant-table">
                     {loading ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>Loading tenants...</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>Loading...</div>
                     ) : error ? (
                         <div style={{ padding: '20px', color: '#dc2626' }}>Error: {error}</div>
                     ) : tenants.length === 0 ? (
                         <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
-                            No tenants yet. Use the <code>createTenant</code> mutation in the Admin API to create one.
+                            No tenants yet.
                         </div>
                     ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Code</th>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Name</th>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Max Channels</th>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Role ID</th>
-                                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>Actions</th>
+                                    <th style={th}></th>
+                                    <th style={th}>Code</th>
+                                    <th style={th}>Name</th>
+                                    <th style={th}>Status</th>
+                                    <th style={th}>Channels</th>
+                                    <th style={th}>Admins</th>
+                                    <th style={th}>Max</th>
+                                    <th style={th}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {tenants.map(tenant => (
-                                    <tr key={tenant.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <code style={{
-                                                background: '#f3f4f6',
-                                                padding: '2px 8px',
-                                                borderRadius: '4px',
-                                                fontSize: '13px',
-                                            }}>{tenant.code}</code>
-                                        </td>
-                                        <td style={{ padding: '12px 16px', fontWeight: 500 }}>{tenant.name}</td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <span style={{
-                                                display: 'inline-block',
-                                                padding: '2px 10px',
-                                                borderRadius: '12px',
-                                                fontSize: '12px',
-                                                fontWeight: 600,
-                                                background: tenant.enabled ? '#dcfce7' : '#fee2e2',
-                                                color: tenant.enabled ? '#16a34a' : '#dc2626',
-                                            }}>
-                                                {tenant.enabled ? 'Active' : 'Suspended'}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '12px 16px' }}>{tenant.maxChannels}</td>
-                                        <td style={{ padding: '12px 16px', color: '#999' }}>{tenant.parentRoleId}</td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <button
-                                                onClick={() => toggleEnabled(tenant)}
-                                                style={{
-                                                    padding: '4px 12px',
-                                                    borderRadius: '6px',
-                                                    border: '1px solid #d1d5db',
-                                                    background: tenant.enabled ? '#fef2f2' : '#f0fdf4',
-                                                    color: tenant.enabled ? '#dc2626' : '#16a34a',
-                                                    cursor: 'pointer',
-                                                    fontSize: '12px',
-                                                    fontWeight: 500,
-                                                }}
-                                            >
-                                                {tenant.enabled ? 'Suspend' : 'Activate'}
-                                            </button>
-                                        </td>
-                                    </tr>
+                                {tenants.map(t => (
+                                    <>
+                                        <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }} onClick={() => toggle(t.id)}>
+                                            <td style={td}>
+                                                <span style={{ fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block', transform: expandedId === t.id ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                                                    &#9654;
+                                                </span>
+                                            </td>
+                                            <td style={td}><code style={codeStyle}>{t.code}</code></td>
+                                            <td style={{ ...td, fontWeight: 500 }}>{t.name}</td>
+                                            <td style={td}><StatusBadge enabled={t.enabled} /></td>
+                                            <td style={td}>
+                                                <span style={{ fontWeight: 600 }}>{t.channels.length}</span>
+                                                <span style={{ color: '#999', marginLeft: '4px' }}>/ {t.maxChannels}</span>
+                                            </td>
+                                            <td style={td}>{t.administrators.length}</td>
+                                            <td style={td}>{t.maxChannels}</td>
+                                            <td style={td} onClick={e => e.stopPropagation()}>
+                                                <button onClick={() => toggleEnabled(t)} style={btnStyle(t.enabled)}>
+                                                    {t.enabled ? 'Suspend' : 'Activate'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {expandedId === t.id && (
+                                            <tr key={`${t.id}-detail`}>
+                                                <td colSpan={8} style={{ padding: '0 16px 16px 40px', background: '#fafbfc' }}>
+                                                    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', paddingTop: '12px' }}>
+                                                        {/* Channels Card */}
+                                                        <div style={cardStyle}>
+                                                            <div style={cardTitle}>Channels ({t.channels.length})</div>
+                                                            {t.channels.length === 0 ? (
+                                                                <div style={{ color: '#999', fontSize: '13px' }}>No channels</div>
+                                                            ) : (
+                                                                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                                                    <thead>
+                                                                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                                                            <th style={subTh}>Code</th>
+                                                                            <th style={subTh}>Currency</th>
+                                                                            <th style={subTh}>Language</th>
+                                                                            <th style={subTh}>Tax incl.</th>
+                                                                            <th style={subTh}>Token</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {t.channels.map(ch => (
+                                                                            <tr key={ch.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                                                <td style={subTd}><code style={codeStyle}>{ch.code}</code></td>
+                                                                                <td style={subTd}><span style={tagStyle}>{ch.defaultCurrencyCode}</span></td>
+                                                                                <td style={subTd}>{ch.defaultLanguageCode}</td>
+                                                                                <td style={subTd}>{ch.pricesIncludeTax ? 'Yes' : 'No'}</td>
+                                                                                <td style={subTd}><code style={{ fontSize: '11px', color: '#999' }}>{ch.token}</code></td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Admins Card */}
+                                                        <div style={cardStyle}>
+                                                            <div style={cardTitle}>Administrators ({t.administrators.length})</div>
+                                                            {t.administrators.length === 0 ? (
+                                                                <div style={{ color: '#999', fontSize: '13px' }}>No admins (ERP-provisioned tenant)</div>
+                                                            ) : (
+                                                                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                                                    <thead>
+                                                                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                                                            <th style={subTh}>Name</th>
+                                                                            <th style={subTh}>Email</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {t.administrators.map(admin => (
+                                                                            <tr key={admin.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                                                <td style={subTd}>{admin.firstName} {admin.lastName}</td>
+                                                                                <td style={subTd}><code style={{ fontSize: '12px' }}>{admin.emailAddress}</code></td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
                                 ))}
                             </tbody>
                         </table>
@@ -200,6 +238,48 @@ function TenantListPage() {
         </Page>
     );
 }
+
+// ---- Small components ----
+
+function StatusBadge({ enabled }: { enabled: boolean }) {
+    return (
+        <span style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: '12px',
+            fontSize: '12px',
+            fontWeight: 600,
+            background: enabled ? '#dcfce7' : '#fee2e2',
+            color: enabled ? '#16a34a' : '#dc2626',
+        }}>
+            {enabled ? 'Active' : 'Suspended'}
+        </span>
+    );
+}
+
+// ---- Styles ----
+
+const th: React.CSSProperties = { padding: '10px 12px', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.3px', color: '#666' };
+const td: React.CSSProperties = { padding: '12px' };
+const subTh: React.CSSProperties = { padding: '6px 10px', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', color: '#888', textAlign: 'left' };
+const subTd: React.CSSProperties = { padding: '6px 10px' };
+
+const codeStyle: React.CSSProperties = { background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontSize: '13px' };
+const tagStyle: React.CSSProperties = { background: '#eff6ff', color: '#2563eb', padding: '1px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 500 };
+
+const cardStyle: React.CSSProperties = { flex: '1 1 300px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', minWidth: '300px' };
+const cardTitle: React.CSSProperties = { fontWeight: 600, fontSize: '14px', marginBottom: '12px', color: '#333' };
+
+const btnStyle = (enabled: boolean): React.CSSProperties => ({
+    padding: '4px 12px',
+    borderRadius: '6px',
+    border: '1px solid #d1d5db',
+    background: enabled ? '#fef2f2' : '#f0fdf4',
+    color: enabled ? '#dc2626' : '#16a34a',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+});
 
 // ---- Register Extension ----
 

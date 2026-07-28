@@ -12,6 +12,7 @@ import {
     CurrencyCode,
     Channel,
     Seller,
+    Administrator,
 } from '@vendure/core';
 import { CreateRoleInput } from '@vendure/common/lib/generated-types';
 import { Tenant } from '../entities/tenant.entity';
@@ -29,14 +30,36 @@ export class TenantService {
     async findAll(ctx: RequestContext): Promise<{ items: Tenant[]; totalItems: number }> {
         const repo = this.connection.getRepository(ctx, Tenant);
         const [items, totalItems] = await repo.findAndCount();
+        // Attach channels and admins to each tenant
+        for (const tenant of items) {
+            (tenant as any).channels = await this.getChannelsForTenant(tenant.id);
+            (tenant as any).administrators = await this.getAdminsForTenant(tenant.id);
+        }
         return { items, totalItems };
     }
 
     async findOne(ctx: RequestContext, id: ID): Promise<Tenant | null> {
-        return this.connection.getRepository(ctx, Tenant).findOne({
+        const tenant = await this.connection.getRepository(ctx, Tenant).findOne({
             where: { id },
             relations: { parentRole: true },
         });
+        if (tenant) {
+            (tenant as any).channels = await this.getChannelsForTenant(tenant.id);
+            (tenant as any).administrators = await this.getAdminsForTenant(tenant.id);
+        }
+        return tenant;
+    }
+
+    async getChannelsForTenant(tenantId: ID): Promise<Channel[]> {
+        return this.connection.rawConnection
+            .getRepository(Channel)
+            .find({ where: { customFields: { tenant: { id: tenantId } } } as any });
+    }
+
+    async getAdminsForTenant(tenantId: ID): Promise<Administrator[]> {
+        return this.connection.rawConnection
+            .getRepository(Administrator)
+            .find({ where: { customFields: { tenant: { id: tenantId } } } as any });
     }
 
     async findByCode(ctx: RequestContext, code: string): Promise<Tenant | null> {

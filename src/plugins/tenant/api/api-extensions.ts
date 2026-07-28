@@ -1,6 +1,22 @@
 import gql from 'graphql-tag';
 
 export const adminApiExtensions = gql`
+    type TenantChannel {
+        id: ID!
+        code: String!
+        token: String!
+        defaultCurrencyCode: CurrencyCode!
+        defaultLanguageCode: LanguageCode!
+        pricesIncludeTax: Boolean!
+    }
+
+    type TenantAdmin {
+        id: ID!
+        firstName: String!
+        lastName: String!
+        emailAddress: String!
+    }
+
     type Tenant implements Node {
         id: ID!
         createdAt: DateTime!
@@ -10,6 +26,8 @@ export const adminApiExtensions = gql`
         enabled: Boolean!
         maxChannels: Int!
         parentRoleId: ID!
+        channels: [TenantChannel!]!
+        administrators: [TenantAdmin!]!
     }
 
     type TenantList {
