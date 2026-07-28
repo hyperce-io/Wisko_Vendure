@@ -29,7 +29,10 @@ interface TenantData {
 }
 
 async function gqlFetch(query: string, variables?: any) {
-    const res = await fetch('/admin-api', {
+    const apiUrl = window.location.port === '5173'
+        ? 'http://localhost:3000/admin-api'
+        : '/admin-api';
+    const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
