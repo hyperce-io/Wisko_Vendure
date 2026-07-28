@@ -1,5 +1,6 @@
 import {
     bootstrapWorker,
+    bootstrap,
     Logger,
     RequestContextService,
     TransactionalConnection,
@@ -10,35 +11,67 @@ import {
     AdministratorService,
     Channel,
     Role,
+    DefaultJobQueuePlugin,
+    ProductService,
 } from '@vendure/core';
+import { populate } from '@vendure/core/cli';
 import { config } from './vendure-config';
 import { TenantService } from './plugins/tenant/services/tenant.service';
 import { Tenant } from './plugins/tenant/entities/tenant.entity';
+import path from 'path';
 
 /**
  * Seed script for testing the multi-tenant 3-tier channel hierarchy.
  *
- * Creates:
- *   - 2 tenants: Nike (3 channels) and Jordan (2 channels)
- *   - 1 ERP-synced tenant: Adidas (2 channels via syncFromErp)
- *   - Per-channel store staff admins for Nike
- *
- * After running you can verify:
- *   SuperAdmin (superadmin/superadmin)   → sees ALL channels
- *   Nike Admin (admin@nike.com/test123)  → sees nike-main, nike-outlet, nike-eu
- *   Jordan Admin (admin@jordan.com/test123) → sees jordan-main, jordan-retro
- *   Nike Outlet Staff (staff@nike-outlet.com/test123) → sees ONLY nike-outlet
+ * Phase 1: Populate Vendure with standard sample data (products, countries, etc.)
+ * Phase 2: Create tenants with channels and assign products per-channel
  *
  * Usage:
  *   npx ts-node src/seed.ts
  */
 
 async function seed() {
-    const { app } = await bootstrapWorker(config);
+    // =========================================================================
+    // PHASE 1: Populate standard Vendure sample data (products, countries, etc.)
+    // =========================================================================
+    Logger.info('=== Phase 1: Populating standard Vendure data ===', 'Seed');
 
-    const { superadminCredentials } = app.get(ConfigService).authOptions;
-    const connService = app.get(TransactionalConnection);
-    const requestContextService = app.get(RequestContextService);
+    const initialData = require('@vendure/create/assets/initial-data.json');
+    const productsCsvFile = require.resolve('@vendure/create/assets/products.csv');
+
+    const populateConfig = {
+        ...config,
+        dbConnectionOptions: {
+            ...config.dbConnectionOptions,
+            synchronize: true,
+        },
+        importExportOptions: {
+            importAssetsDir: path.join(
+                require.resolve('@vendure/create/assets/products.csv'),
+                '../images',
+            ),
+        },
+    };
+
+    const app = await populate(
+        () => bootstrap(populateConfig),
+        initialData,
+        productsCsvFile,
+    );
+
+    Logger.info('Standard data populated. Closing bootstrap app...', 'Seed');
+    await app.close();
+
+    // =========================================================================
+    // PHASE 2: Bootstrap worker for tenant seeding
+    // =========================================================================
+    Logger.info('=== Phase 2: Seeding tenants ===', 'Seed');
+
+    const { app: workerApp } = await bootstrapWorker(config);
+
+    const { superadminCredentials } = workerApp.get(ConfigService).authOptions;
+    const connService = workerApp.get(TransactionalConnection);
+    const requestContextService = workerApp.get(RequestContextService);
 
     // Helper: reload the SuperAdmin user (with fresh roles/channels) and build a new context.
     // This is needed because as we create new channels, the SuperAdmin's role_channels_channel
@@ -53,10 +86,11 @@ async function seed() {
 
     let ctx = await freshCtx();
 
-    const tenantService = app.get(TenantService);
-    const channelService = app.get(ChannelService);
-    const roleService = app.get(RoleService);
-    const administratorService = app.get(AdministratorService);
+    const tenantService = workerApp.get(TenantService);
+    const channelService = workerApp.get(ChannelService);
+    const roleService = workerApp.get(RoleService);
+    const administratorService = workerApp.get(AdministratorService);
+    const productService = workerApp.get(ProductService);
     const connection = connService;
 
     // Helper: ensure all channels are assigned to the SuperAdmin role so
@@ -205,7 +239,92 @@ async function seed() {
     Logger.info(`  ✓ ERP re-sync of ERP-ADI-001: updated (not duplicated)`, 'Seed');
 
     // =========================================================================
-    // 5. VERIFY: Print the final state
+    // 5. ASSIGN PRODUCTS to tenant channels so each channel has real data
+    // =========================================================================
+    await syncSuperAdminChannels();
+    Logger.info('Assigning products to tenant channels...', 'Seed');
+
+    // Get all products from the default channel
+    const { items: allProducts } = await productService.findAll(ctx, { take: 100 });
+    const productIds = allProducts.map(p => p.id);
+
+    if (productIds.length > 0) {
+        // Nike gets products 1-10 across its channels
+        const nikeMainIds = productIds.slice(0, 5);
+        const nikeOutletIds = productIds.slice(3, 8);  // some overlap with main
+        const nikeEuIds = productIds.slice(0, 7);       // broader EU selection
+
+        // Jordan gets products 8-15
+        const jordanMainIds = productIds.slice(7, 12);
+        const jordanRetroIds = productIds.slice(10, 15);
+
+        // Adidas gets products 15-20
+        const adidasOriginalsIds = productIds.slice(14, 18);
+        const adidasPerformanceIds = productIds.slice(16, 20);
+
+        // Assign to channels using channelService
+        const assignments = [
+            { channelId: (nikeChannel2 as any).id, productIds: nikeMainIds, name: 'nike-main' },
+            { channelId: (nikeChannel2 as any).id, productIds: nikeOutletIds, name: 'nike-outlet' },
+            { channelId: (nikeChannel3 as any).id, productIds: nikeEuIds, name: 'nike-eu' },
+            { channelId: (jordanChannel2 as any).id, productIds: jordanMainIds, name: 'jordan-retro' },
+        ];
+
+        // Use raw SQL to assign products to channels (product_channels_channel join table)
+        for (const { name } of assignments) {
+            Logger.info(`  Assigning products to ${name}...`, 'Seed');
+        }
+
+        // Simpler: use ProductService.assignProductsToChannel
+        const nikeMainChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'nike-main' } });
+        const nikeOutletChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'nike-outlet' } });
+        const nikeEuChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'nike-eu' } });
+        const jordanMainChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'jordan-main' } });
+        const jordanRetroChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'jordan-retro' } });
+        const adidasOriginalsChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'adidas-originals' } });
+        const adidasPerformanceChannel = await connection.rawConnection.getRepository(Channel)
+            .findOne({ where: { code: 'adidas-performance' } });
+
+        if (nikeMainChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: nikeMainChannel.id, productIds: nikeMainIds });
+            Logger.info(`  ✓ nike-main: ${nikeMainIds.length} products`, 'Seed');
+        }
+        if (nikeOutletChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: nikeOutletChannel.id, productIds: nikeOutletIds });
+            Logger.info(`  ✓ nike-outlet: ${nikeOutletIds.length} products`, 'Seed');
+        }
+        if (nikeEuChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: nikeEuChannel.id, productIds: nikeEuIds });
+            Logger.info(`  ✓ nike-eu: ${nikeEuIds.length} products`, 'Seed');
+        }
+        if (jordanMainChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: jordanMainChannel.id, productIds: jordanMainIds });
+            Logger.info(`  ✓ jordan-main: ${jordanMainIds.length} products`, 'Seed');
+        }
+        if (jordanRetroChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: jordanRetroChannel.id, productIds: jordanRetroIds });
+            Logger.info(`  ✓ jordan-retro: ${jordanRetroIds.length} products`, 'Seed');
+        }
+        if (adidasOriginalsChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: adidasOriginalsChannel.id, productIds: adidasOriginalsIds });
+            Logger.info(`  ✓ adidas-originals: ${adidasOriginalsIds.length} products`, 'Seed');
+        }
+        if (adidasPerformanceChannel) {
+            await productService.assignProductsToChannel(ctx, { channelId: adidasPerformanceChannel.id, productIds: adidasPerformanceIds });
+            Logger.info(`  ✓ adidas-performance: ${adidasPerformanceIds.length} products`, 'Seed');
+        }
+    } else {
+        Logger.warn('No products found in default channel — skipping product assignment', 'Seed');
+    }
+
+    // =========================================================================
+    // 6. SYNC + VERIFY: Print the final state
     // =========================================================================
     await syncSuperAdminChannels();
 
@@ -240,7 +359,11 @@ async function seed() {
         Logger.info(`  Parent Role ID: ${t.parentRoleId}`, 'Seed');
         Logger.info(`  Channels (${tenantChannels.length}):`, 'Seed');
         for (const ch of tenantChannels) {
-            Logger.info(`    - ${ch.code} (id=${ch.id}, token=${ch.token})`, 'Seed');
+            // Count products in this channel
+            const productCount = await connection.rawConnection
+                .query(`SELECT COUNT(*) as cnt FROM product_channels_channel WHERE "channelId" = $1`, [ch.id]);
+            const cnt = productCount[0]?.cnt || 0;
+            Logger.info(`    - ${ch.code} (id=${ch.id}, products=${cnt})`, 'Seed');
         }
 
         // Show the role's channel list (should match)
@@ -283,6 +406,8 @@ async function seed() {
     Logger.info('4. Nike Outlet staff sees ONLY nike-outlet',               'Seed');
     Logger.info('5. Nike cannot see any Jordan or Adidas channels',         'Seed');
     Logger.info('6. Jordan cannot see any Nike or Adidas channels',         'Seed');
+    Logger.info('7. Each channel has its own subset of products',            'Seed');
+    Logger.info('8. Switch channels in dashboard to see different products', 'Seed');
     Logger.info('',                                                         'Seed');
 }
 
