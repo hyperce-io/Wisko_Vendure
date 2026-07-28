@@ -1,8 +1,5 @@
 import {
     defineDashboardExtension,
-    Page,
-    PageBlock,
-    PageLayout,
 } from '@vendure/dashboard';
 import React, { useState, useEffect } from 'react';
 
@@ -95,16 +92,15 @@ function TenantListPage() {
     const totalAdmins = tenants.reduce((sum, t) => sum + t.administrators.length, 0);
 
     return (
-        <Page pageId="tenants-list">
-            <PageLayout>
-                {/* Stats row */}
-                <PageBlock column="full" blockId="tenant-header">
-                    <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 8px 0' }}>Tenants</h1>
-                    <p style={{ color: '#666', margin: 0, fontSize: '14px' }}>Manage your multi-tenant organizations, their channels and administrators.</p>
-                </PageBlock>
+        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+            {/* Header */}
+            <div style={{ marginBottom: '24px' }}>
+                <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 8px 0' }}>Tenants</h1>
+                <p style={{ color: '#666', margin: 0, fontSize: '14px' }}>Manage your multi-tenant organizations, their channels and administrators.</p>
+            </div>
 
-                <PageBlock column="full" blockId="tenant-stats">
-                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            {/* Stats */}
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
                         {[
                             { label: 'Total Tenants', value: totalItems, bg: '#f8f9fa', color: '#111' },
                             { label: 'Active', value: active, bg: '#f0fdf4', color: '#16a34a' },
@@ -118,10 +114,11 @@ function TenantListPage() {
                             </div>
                         ))}
                     </div>
-                </PageBlock>
+                </div>
+            </div>
 
-                {/* Table */}
-                <PageBlock column="full" blockId="tenant-table">
+            {/* Table */}
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
                     {loading ? (
                         <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>Loading...</div>
                     ) : error ? (
@@ -236,9 +233,9 @@ function TenantListPage() {
                             </tbody>
                         </table>
                     )}
-                </PageBlock>
-            </PageLayout>
-        </Page>
+                </div>
+            </div>
+        </div>
     );
 }
 
