@@ -1,28 +1,9 @@
-# Wisko Vendure — ERP Integration API Specification
-
-## Overview
-
-This document defines the JSON payload format for syncing organizational hierarchy and store data from the ERP system into Vendure. The ERP is the source of truth for Companies, Tenants (regional business units), and Channels (stores).
-
-All payloads are sent to a single endpoint:
-
-```
-POST /admin-api
-Content-Type: application/json
-Authorization: Bearer <service-account-token>
-
-{
-  "query": "mutation SyncFromErp($input: SyncFromErpInput!) { syncFromErp(input: $input) { ... } }",
-  "variables": { "input": <payload> }
-}
-```
-
----
+# Wisko Vendure — ERP Integration JSON Contracts
 
 ## Hierarchy
 
 ```
-Company (Nike)                    ← the brand / top-level organization
+Company (Nike)                    ← the brand / organization
   └── Tenant (Nike India Pvt Ltd) ← legal entity / regional business unit
        └── Channel (Mumbai Store) ← actual store that sells products
 ```
@@ -30,16 +11,73 @@ Company (Nike)                    ← the brand / top-level organization
 **Rules:**
 - No Tenant without a Company
 - No Channel without a Tenant
-- Company code + Tenant code + Channel erpChannelId are the idempotency keys
-- Re-sending the same codes = update, never duplicate
+- `company.code`, `tenant.code`, `channel.erpChannelId` are idempotency keys
+- Re-sending same codes = update, never duplicate
 
 ---
 
-## Payload Scenarios
+## CREATE
 
-### 1. Full Sync — Company + Tenant + Channel + Admins (all at once)
+### Create a Company
 
-Use when onboarding a completely new organization with its first store.
+```json
+{
+  "company": {
+    "code": "nike",
+    "name": "Nike",
+    "enabled": true,
+    "admin": {
+      "email": "boss@nike.com",
+      "password": "securepass123",
+      "firstName": "Nike",
+      "lastName": "Admin"
+    }
+  }
+}
+```
+
+### Create a Company + Tenant
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "tenant": {
+    "code": "nike-india",
+    "name": "Nike India Pvt Ltd",
+    "admin": {
+      "email": "admin@nike-india.com",
+      "password": "securepass123",
+      "firstName": "Nike India",
+      "lastName": "Admin"
+    }
+  }
+}
+```
+
+### Create a Company + Tenant + Channel
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "tenant": {
+    "code": "nike-india"
+  },
+  "channel": {
+    "erpChannelId": "ERP-NI-001",
+    "code": "nike-india-mumbai",
+    "name": "Nike India Mumbai Store",
+    "defaultCurrencyCode": "INR",
+    "defaultLanguageCode": "en",
+    "pricesIncludeTax": true
+  }
+}
+```
+
+### Create everything at once
 
 ```json
 {
@@ -57,7 +95,6 @@ Use when onboarding a completely new organization with its first store.
   "tenant": {
     "code": "nike-india",
     "name": "Nike India Pvt Ltd",
-    "maxChannels": 10,
     "admin": {
       "email": "admin@nike-india.com",
       "password": "securepass123",
@@ -76,141 +113,7 @@ Use when onboarding a completely new organization with its first store.
 }
 ```
 
-**What Vendure does:**
-1. Creates Company "nike" + company admin role + admin account `boss@nike.com`
-2. Creates Tenant "nike-india" under Nike + tenant admin role + admin account `admin@nike-india.com`
-3. Creates Channel "nike-india-mumbai" under Nike India
-4. Hook fires: adds channel to tenant role + company role
-5. `boss@nike.com` can now see mumbai store
-6. `admin@nike-india.com` can now see mumbai store
-
----
-
-### 2. Company Only (no tenants or channels yet)
-
-Use when registering a new brand before any regional entities exist.
-
-```json
-{
-  "company": {
-    "code": "jordan",
-    "name": "Jordan Brand",
-    "enabled": true,
-    "admin": {
-      "email": "boss@jordan.com",
-      "password": "securepass123",
-      "firstName": "Jordan",
-      "lastName": "Admin"
-    }
-  }
-}
-```
-
-**What Vendure does:**
-1. Creates Company "jordan" + admin role (empty channels) + admin account
-2. `boss@jordan.com` can log in but sees 0 channels (no stores yet)
-
----
-
-### 3. Company + Tenant (no channel yet)
-
-Use when a new regional entity is created but stores haven't been set up.
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-uk",
-    "name": "Nike UK Ltd",
-    "maxChannels": 5,
-    "admin": {
-      "email": "admin@nike-uk.com",
-      "password": "securepass123",
-      "firstName": "Nike UK",
-      "lastName": "Admin"
-    }
-  }
-}
-```
-
-**What Vendure does:**
-1. Finds existing Company "nike" (already exists, `admin` field ignored)
-2. Creates Tenant "nike-uk" under Nike + tenant admin role + admin account
-3. `admin@nike-uk.com` can log in but sees 0 channels (no stores yet)
-4. `boss@nike.com` still sees only previously created channels (nothing new added)
-
----
-
-### 4. Add a Channel to existing Company + Tenant
-
-Use when a new store opens under an existing organization/region.
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
-  "channel": {
-    "erpChannelId": "ERP-NI-002",
-    "code": "nike-india-delhi",
-    "name": "Nike India Delhi Store",
-    "defaultCurrencyCode": "INR",
-    "defaultLanguageCode": "en",
-    "pricesIncludeTax": true
-  }
-}
-```
-
-**What Vendure does:**
-1. Finds Company "nike" (exists)
-2. Finds Tenant "nike-india" (exists)
-3. Creates Channel "nike-india-delhi"
-4. Hook: adds to `tenant-nike-india-admin` role + `company-nike-admin` role
-5. Both `admin@nike-india.com` and `boss@nike.com` now see delhi store
-
----
-
-### 5. Add a new Tenant + Channel to existing Company
-
-Use when a new region launches with its first store.
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-japan",
-    "name": "Nike Japan KK",
-    "maxChannels": 8,
-    "admin": {
-      "email": "admin@nike-japan.com",
-      "password": "securepass123",
-      "firstName": "Nike Japan",
-      "lastName": "Admin"
-    }
-  },
-  "channel": {
-    "erpChannelId": "ERP-NJ-001",
-    "code": "nike-japan-tokyo",
-    "name": "Nike Japan Tokyo Store",
-    "defaultCurrencyCode": "JPY",
-    "defaultLanguageCode": "ja",
-    "pricesIncludeTax": true
-  }
-}
-```
-
----
-
-### 6. Bulk Sync — Multiple Channels at once
-
-Use when syncing multiple stores for the same tenant in one call.
+### Bulk — multiple channels
 
 ```json
 {
@@ -236,24 +139,12 @@ Use when syncing multiple stores for the same tenant in one call.
       "defaultCurrencyCode": "INR",
       "defaultLanguageCode": "en",
       "pricesIncludeTax": true
-    },
-    {
-      "erpChannelId": "ERP-NI-003",
-      "code": "nike-india-bangalore",
-      "name": "Bangalore Store",
-      "defaultCurrencyCode": "INR",
-      "defaultLanguageCode": "en",
-      "pricesIncludeTax": true
     }
   ]
 }
 ```
 
----
-
-### 7. Full Organization Sync (entire hierarchy in one call)
-
-Use for initial onboarding of a complete organization.
+### Bulk — full org with multiple tenants and channels
 
 ```json
 {
@@ -272,7 +163,6 @@ Use for initial onboarding of a complete organization.
     {
       "code": "adidas-eu",
       "name": "Adidas Europe GmbH",
-      "maxChannels": 20,
       "admin": {
         "email": "admin@adidas-eu.com",
         "password": "securepass123",
@@ -301,7 +191,6 @@ Use for initial onboarding of a complete organization.
     {
       "code": "adidas-us",
       "name": "Adidas America Inc",
-      "maxChannels": 15,
       "admin": {
         "email": "admin@adidas-us.com",
         "password": "securepass123",
@@ -325,9 +214,26 @@ Use for initial onboarding of a complete organization.
 
 ---
 
-## Admin Management
+## ADD ADMIN
 
-### 8. Add a new admin to an existing Tenant
+### Add a company-level admin
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "admin": {
+    "email": "regional-head@nike.com",
+    "password": "securepass123",
+    "firstName": "Sarah",
+    "lastName": "Johnson",
+    "role": "company-admin"
+  }
+}
+```
+
+### Add a tenant-level admin
 
 ```json
 {
@@ -347,13 +253,7 @@ Use for initial onboarding of a complete organization.
 }
 ```
 
-**Role options:**
-- `"tenant-admin"` — sees all channels in the tenant (default)
-- `"store-staff"` — sees only specific channels (requires `channelCodes` field)
-
----
-
-### 9. Add a store-level staff member
+### Add a store-level staff member
 
 ```json
 {
@@ -374,49 +274,54 @@ Use for initial onboarding of a complete organization.
 }
 ```
 
-**What Vendure does:**
-1. Creates an Administrator `staff@mumbai-store.com`
-2. Creates a Role scoped to only `nike-india-mumbai` channel
-3. Staff can only see/manage the Mumbai store
-
 ---
 
-### 10. Add a Company-level admin
+## UPDATE
+
+### Update a Company
+
+```json
+{
+  "company": {
+    "code": "nike",
+    "name": "Nike Inc."
+  }
+}
+```
+
+### Update a Tenant
 
 ```json
 {
   "company": {
     "code": "nike"
   },
-  "admin": {
-    "email": "regional-head@nike.com",
-    "password": "securepass123",
-    "firstName": "Sarah",
-    "lastName": "Johnson",
-    "role": "company-admin"
+  "tenant": {
+    "code": "nike-india",
+    "name": "Nike India Private Limited"
   }
 }
 ```
 
----
-
-### 11. Deactivate an admin
+### Update a Channel
 
 ```json
 {
   "company": {
     "code": "nike"
   },
-  "admin": {
-    "email": "old-admin@nike-india.com",
-    "action": "deactivate"
+  "tenant": {
+    "code": "nike-india"
+  },
+  "channel": {
+    "erpChannelId": "ERP-NI-001",
+    "name": "Nike Mumbai Flagship",
+    "defaultCurrencyCode": "INR"
   }
 }
 ```
 
----
-
-### 12. Update admin role / channel access
+### Update admin role / channel access
 
 ```json
 {
@@ -434,11 +339,9 @@ Use for initial onboarding of a complete organization.
 
 ---
 
-## Suspend / Reactivate
+## SUSPEND / REACTIVATE
 
-### 13. Suspend an entire Company
-
-All admins under this company lose access.
+### Suspend a Company (all admins under it lose access)
 
 ```json
 {
@@ -449,9 +352,18 @@ All admins under this company lose access.
 }
 ```
 
-### 14. Suspend a Tenant
+### Reactivate a Company
 
-All admins under this tenant lose access. Company admin still works.
+```json
+{
+  "company": {
+    "code": "nike",
+    "enabled": true
+  }
+}
+```
+
+### Suspend a Tenant (company admin still works)
 
 ```json
 {
@@ -467,113 +379,130 @@ All admins under this tenant lose access. Company admin still works.
 
 ---
 
+## DELETE / DEACTIVATE
+
+### Deactivate an admin
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "admin": {
+    "email": "old-admin@nike-india.com",
+    "action": "deactivate"
+  }
+}
+```
+
+### Delete a Channel
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "tenant": {
+    "code": "nike-india"
+  },
+  "channel": {
+    "erpChannelId": "ERP-NI-002",
+    "action": "delete"
+  }
+}
+```
+
+### Delete a Tenant (and all its channels)
+
+```json
+{
+  "company": {
+    "code": "nike"
+  },
+  "tenant": {
+    "code": "nike-india",
+    "action": "delete"
+  }
+}
+```
+
+---
+
 ## Field Reference
 
-### Company Object
+### Company
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `code` | string | Always | Unique identifier, lowercase, no spaces. Idempotency key. |
-| `name` | string | On first creation | Display name |
-| `enabled` | boolean | No | Default `true`. Set `false` to suspend. |
-| `admin` | object | On first creation | Ignored if company already exists |
-| `admin.email` | string | Yes (in admin) | Must be unique across all admins |
-| `admin.password` | string | Yes (in admin) | Min 8 chars |
-| `admin.firstName` | string | Yes (in admin) | |
-| `admin.lastName` | string | Yes (in admin) | |
+| `code` | string | Always | Unique identifier, lowercase, no spaces |
+| `name` | string | On create | Display name |
+| `enabled` | boolean | No | Default `true`. Set `false` to suspend |
+| `admin` | object | On create | Ignored if company already exists |
 
-### Tenant Object
+### Tenant
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `code` | string | Always | Unique within the company. Idempotency key. |
-| `name` | string | On first creation | Display name |
-| `maxChannels` | number | No | Default 5. Max stores allowed under this tenant. |
-| `enabled` | boolean | No | Default `true`. Set `false` to suspend. |
-| `admin` | object | On first creation | Ignored if tenant already exists |
-| `admin.email` | string | Yes (in admin) | Must be unique |
-| `admin.password` | string | Yes (in admin) | |
-| `admin.firstName` | string | Yes (in admin) | |
-| `admin.lastName` | string | Yes (in admin) | |
+| `code` | string | Always | Unique within the company |
+| `name` | string | On create | Display name |
+| `enabled` | boolean | No | Default `true`. Set `false` to suspend |
+| `action` | string | No | `"delete"` to remove tenant + all channels |
+| `admin` | object | On create | Ignored if tenant already exists |
 
-### Channel Object
+### Channel
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `erpChannelId` | string | Always | Unique external ID. Idempotency key — re-send = update. |
-| `code` | string | Always | Unique channel code in Vendure |
-| `name` | string | On first creation | Display name |
+| `erpChannelId` | string | Always | Unique external ID — the idempotency key |
+| `code` | string | On create | Unique channel code in Vendure |
+| `name` | string | On create | Display name |
 | `defaultCurrencyCode` | string | No | ISO 4217 (INR, USD, EUR, GBP, JPY). Default: USD |
 | `defaultLanguageCode` | string | No | ISO 639-1 (en, de, fr, ja, hi). Default: en |
 | `pricesIncludeTax` | boolean | No | Default: false |
+| `action` | string | No | `"delete"` to remove channel |
 
-### Admin Object (standalone)
+### Admin
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `email` | string | Always | Unique identifier |
-| `password` | string | On creation | Not needed for deactivate/update |
-| `firstName` | string | On creation | |
-| `lastName` | string | On creation | |
+| `password` | string | On create | Not needed for deactivate/update |
+| `firstName` | string | On create | |
+| `lastName` | string | On create | |
 | `role` | string | No | `"company-admin"`, `"tenant-admin"` (default), `"store-staff"` |
-| `channelCodes` | string[] | For store-staff | Which specific stores this admin can see |
+| `channelCodes` | string[] | For store-staff | Which stores this admin can access |
 | `action` | string | No | `"create"` (default), `"deactivate"`, `"update"` |
 
 ---
 
-## Validation Rules
+## Validation
 
 | Rule | Error |
 |---|---|
-| `tenant` provided without `company` | `"company.code is required when providing a tenant"` |
-| `channel` provided without `tenant` | `"tenant.code is required when providing a channel"` |
-| `channel` provided without `company` | `"company.code is required when providing a channel"` |
-| Duplicate `company.code` on create | Uses existing (idempotent, not an error) |
-| Duplicate `tenant.code` within same company | Uses existing (idempotent) |
+| `tenant` without `company` | `"company.code is required"` |
+| `channel` without `tenant` | `"tenant.code is required"` |
+| `channel` without `company` | `"company.code is required"` |
+| Duplicate codes on create | Uses existing (idempotent, not an error) |
 | Duplicate `erpChannelId` | Updates existing channel (idempotent) |
-| Tenant channel count exceeds `maxChannels` | `"Tenant has reached maximum channel limit"` |
-| `admin.email` already exists | `"Administrator with this email already exists"` |
-| Company/Tenant `enabled: false` | All admins under it are blocked from login |
+| `admin.email` already exists | `"Administrator already exists"` |
 
 ---
 
-## Response Format
+## Response
 
 ### Success
 
 ```json
 {
-  "data": {
-    "syncFromErp": {
-      "success": true,
-      "company": {
-        "id": "1",
-        "code": "nike",
-        "name": "Nike",
-        "isNew": false
-      },
-      "tenant": {
-        "id": "2",
-        "code": "nike-india",
-        "name": "Nike India Pvt Ltd",
-        "isNew": true
-      },
-      "channels": [
-        {
-          "id": "5",
-          "code": "nike-india-mumbai",
-          "erpChannelId": "ERP-NI-001",
-          "isNew": true
-        }
-      ],
-      "admins": [
-        {
-          "email": "admin@nike-india.com",
-          "isNew": true
-        }
-      ]
-    }
-  }
+  "success": true,
+  "company": { "id": "1", "code": "nike", "isNew": false },
+  "tenant": { "id": "2", "code": "nike-india", "isNew": true },
+  "channels": [
+    { "id": "5", "code": "nike-india-mumbai", "erpChannelId": "ERP-NI-001", "isNew": true }
+  ],
+  "admins": [
+    { "email": "admin@nike-india.com", "isNew": true }
+  ]
 }
 ```
 
@@ -581,62 +510,14 @@ All admins under this tenant lose access. Company admin still works.
 
 ```json
 {
-  "errors": [
-    {
-      "message": "company.code is required when providing a tenant",
-      "extensions": {
-        "code": "BAD_USER_INPUT"
-      }
-    }
-  ]
+  "success": false,
+  "error": "company.code is required when providing a tenant"
 }
 ```
-
----
-
-## Authentication
-
-The ERP authenticates as a service account with SuperAdmin permissions:
-
-```
-POST /admin-api
-Headers:
-  Content-Type: application/json
-  Authorization: Bearer <jwt-token>
-```
-
-To obtain the token:
-```json
-{
-  "query": "mutation { login(username: \"erp-service\", password: \"...\") { ... on CurrentUser { id } } }"
-}
-```
-
-Or use a Vendure API Key (recommended for service-to-service):
-```
-Headers:
-  vendure-token: <channel-token>
-  Authorization: Bearer <api-key>
-```
-
----
-
-## Idempotency Summary
-
-| Entity | Idempotency Key | Re-send behavior |
-|---|---|---|
-| Company | `company.code` | Found → use existing, skip creation |
-| Tenant | `tenant.code` (within company) | Found → use existing, link to company if not already |
-| Channel | `channel.erpChannelId` | Found → update fields, never duplicate |
-| Admin | `admin.email` | Found → skip creation (or update if `action: "update"`) |
-
-The ERP can safely re-send the same payload multiple times. Nothing will be duplicated.
 
 ---
 
 ## Visibility After Sync
-
-After syncing `Nike → Nike India → Mumbai + Delhi` and `Nike → Nike UK → London`:
 
 | Login | Sees | Level |
 |---|---|---|
