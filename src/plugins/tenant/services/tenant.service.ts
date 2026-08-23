@@ -14,6 +14,8 @@ import {
     Administrator,
     Logger,
     Role,
+    Permission,
+    isGraphQlErrorResult,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
@@ -26,7 +28,10 @@ import {
     CreateTenantInput,
     UpdateTenantInput,
     UpdateCompanyInput,
+    CompanyWithRelations,
+    TenantWithRelations,
 } from '../types';
+import '../types';
 
 @Injectable()
 export class TenantService {
@@ -44,23 +49,24 @@ export class TenantService {
     async findAllCompanies(ctx: RequestContext) {
         const repo = this.connection.rawConnection.getRepository(Company);
         const [items, totalItems] = await repo.findAndCount({ relations: { tenants: true } });
+        const enrichedItems: CompanyWithRelations[] = [];
         for (const company of items) {
-            (company as any).channels = await this.getChannelsForCompany(company.id);
-            (company as any).administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
+            const channels = await this.getChannelsForCompany(company.id);
+            const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
+            enrichedItems.push(Object.assign(company, { channels, administrators }) as CompanyWithRelations);
         }
-        return { items, totalItems };
+        return { items: enrichedItems, totalItems };
     }
 
-    async findCompany(ctx: RequestContext, id: ID) {
+    async findCompany(ctx: RequestContext, id: ID): Promise<CompanyWithRelations | null> {
         const company = await this.connection.rawConnection.getRepository(Company).findOne({
             where: { id },
             relations: { parentRole: true, tenants: true },
         });
-        if (company) {
-            (company as any).channels = await this.getChannelsForCompany(company.id);
-            (company as any).administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
-        }
-        return company;
+        if (!company) return null;
+        const channels = await this.getChannelsForCompany(company.id);
+        const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
+        return Object.assign(company, { channels, administrators }) as CompanyWithRelations;
     }
 
     async findCompanyByCode(ctx: RequestContext, code: string) {
@@ -136,23 +142,24 @@ export class TenantService {
     async findAll(ctx: RequestContext) {
         const repo = this.connection.getRepository(ctx, Tenant);
         const [items, totalItems] = await repo.findAndCount({ relations: { company: true } });
+        const enrichedItems: TenantWithRelations[] = [];
         for (const tenant of items) {
-            (tenant as any).channels = await this.getChannelsForTenant(tenant.id);
-            (tenant as any).administrators = await this.getAdminsForTenant(tenant.id);
+            const channels = await this.getChannelsForTenant(tenant.id);
+            const administrators = await this.getAdminsForTenant(tenant.id);
+            enrichedItems.push(Object.assign(tenant, { channels, administrators }) as TenantWithRelations);
         }
-        return { items, totalItems };
+        return { items: enrichedItems, totalItems };
     }
 
-    async findOne(ctx: RequestContext, id: ID) {
+    async findOne(ctx: RequestContext, id: ID): Promise<TenantWithRelations | null> {
         const tenant = await this.connection.getRepository(ctx, Tenant).findOne({
             where: { id },
             relations: { parentRole: true, company: true },
         });
-        if (tenant) {
-            (tenant as any).channels = await this.getChannelsForTenant(tenant.id);
-            (tenant as any).administrators = await this.getAdminsForTenant(tenant.id);
-        }
-        return tenant;
+        if (!tenant) return null;
+        const channels = await this.getChannelsForTenant(tenant.id);
+        const administrators = await this.getAdminsForTenant(tenant.id);
+        return Object.assign(tenant, { channels, administrators }) as TenantWithRelations;
     }
 
     async findByCode(ctx: RequestContext, code: string) {
@@ -194,6 +201,7 @@ export class TenantService {
                     emailAddress: input.admin.email,
                     password: input.admin.password || 'changeme123',
                     roleIds: [role.id as string],
+                    // customFields is typed as JSON in CreateAdministratorInput
                     customFields: { tenant } as any,
                 });
                 Logger.info(`Created tenant admin: ${input.admin.email}`, 'TenantService');
@@ -243,6 +251,7 @@ export class TenantService {
         if (!tenant) throw new UserInputError(`Tenant "${input.tenantCode}" not found`);
 
         // Idempotent: check existing by erpChannelId
+        // TypeORM cannot type custom field relations in where clauses
         const existing = await this.connection.rawConnection
             .getRepository(Channel)
             .findOne({ where: { customFields: { erpChannelId: input.erpChannelId } } as any });
@@ -250,7 +259,8 @@ export class TenantService {
         if (existing) {
             const updatePayload: any = {
                 id: existing.id,
-                customFields: { tenant, erpChannelId: input.erpChannelId } as any,
+                // customFields is typed as JSON in UpdateChannelInput
+                customFields: { tenant, erpChannelId: input.erpChannelId },
             };
             if (input.code) updatePayload.code = input.code;
             if (input.defaultLanguageCode) updatePayload.defaultLanguageCode = input.defaultLanguageCode;
@@ -261,27 +271,47 @@ export class TenantService {
         const channelCode = input.code || `${input.tenantCode}-${Date.now().toString(36)}`;
         const token = `${channelCode}-${Date.now().toString(36)}`;
 
-        const channel = await this.channelService.create(ctx, {
+        const result = await this.channelService.create(ctx, {
             code: channelCode,
             token,
-            defaultLanguageCode: (input.defaultLanguageCode || 'en') as any,
-            defaultCurrencyCode: (input.defaultCurrencyCode || 'USD') as any,
+            defaultLanguageCode: (input.defaultLanguageCode || 'en') as LanguageCode,
+            defaultCurrencyCode: (input.defaultCurrencyCode || 'USD') as CurrencyCode,
             pricesIncludeTax: input.pricesIncludeTax || false,
-            defaultShippingZoneId: undefined as any,
-            defaultTaxZoneId: undefined as any,
+            defaultShippingZoneId: undefined!,
+            defaultTaxZoneId: undefined!,
+            // customFields is typed as JSON in CreateChannelInput
             customFields: { tenant, erpChannelId: input.erpChannelId } as any,
         });
 
+        if (isGraphQlErrorResult(result)) {
+            throw new UserInputError(result.message);
+        }
+
         Logger.info(`Created channel: ${channelCode} (erp: ${input.erpChannelId})`, 'TenantService');
 
-        // Assign SuperAdmin + Customer roles to the new channel
-        // (same as what Vendure's createChannel resolver does)
-        await this.assignBuiltInRolesToChannel(ctx, (channel as Channel).id);
+        // result is now typed as Channel
+        await this.assignBuiltInRolesToChannel(ctx, result.id);
 
-        return channel as Channel;
+        // Assign channel to tenant's parent role
+        await this.roleService.assignRoleToChannel(ctx, tenant.parentRoleId, result.id);
+        Logger.info(`Assigned channel to tenant role (tenant: ${tenant.code})`, 'TenantService');
+
+        // Assign channel to company's parent role (if tenant has a company)
+        if (tenant.companyId) {
+            const company = await this.connection.rawConnection
+                .getRepository(Company)
+                .findOne({ where: { id: tenant.companyId } });
+            if (company) {
+                await this.roleService.assignRoleToChannel(ctx, company.parentRoleId, result.id);
+                Logger.info(`Assigned channel to company role (company: ${company.code})`, 'TenantService');
+            }
+        }
+
+        return result;
     }
 
     async deleteChannel(ctx: RequestContext, erpChannelId: string) {
+        // TypeORM cannot type custom field relations in where clauses
         const channel = await this.connection.rawConnection
             .getRepository(Channel)
             .findOne({ where: { customFields: { erpChannelId } } as any });
@@ -316,16 +346,15 @@ export class TenantService {
             await this.syncSuperAdminChannels();
 
             const allChannels = await this.channelService.findAll(ctx);
-            const channelList = (allChannels as any).items || allChannels;
-            const channelIds = channelList
-                .filter((c: any) => input.channelCodes!.includes(c.code))
-                .map((c: any) => c.id as string);
+            const channelIds = allChannels.items
+                .filter(c => input.channelCodes!.includes(c.code))
+                .map(c => c.id as string);
 
             if (channelIds.length > 0) {
                 const role = await this.roleService.create(ctx, {
                     code: `staff-${input.email.split('@')[0]}-${Date.now().toString(36)}`,
                     description: `Store staff for ${input.email}`,
-                    permissions: ['ReadCatalog' as any, 'ReadOrder' as any, 'UpdateOrder' as any, 'ReadCustomer' as any],
+                    permissions: [Permission.ReadCatalog, Permission.ReadOrder, Permission.UpdateOrder, Permission.ReadCustomer],
                     channelIds,
                 });
                 roleIds = [role.id as string];
@@ -346,6 +375,7 @@ export class TenantService {
             emailAddress: input.email,
             password: input.password || 'changeme123',
             roleIds,
+            // customFields is typed as JSON in CreateAdministratorInput
             customFields: tenant ? { tenant } as any : undefined,
         });
 
@@ -367,12 +397,14 @@ export class TenantService {
     // ========================================================================
 
     async getChannelsForTenant(tenantId: ID): Promise<Channel[]> {
+        // TypeORM cannot type custom field relations in where clauses
         return this.connection.rawConnection
             .getRepository(Channel)
             .find({ where: { customFields: { tenant: { id: tenantId } } } as any });
     }
 
     async getAdminsForTenant(tenantId: ID): Promise<Administrator[]> {
+        // TypeORM cannot type custom field relations in where clauses
         return this.connection.rawConnection
             .getRepository(Administrator)
             .find({ where: { customFields: { tenant: { id: tenantId } } } as any });
@@ -381,7 +413,7 @@ export class TenantService {
     async getChannelsForCompany(companyId: ID): Promise<Channel[]> {
         const tenants = await this.connection.rawConnection
             .getRepository(Tenant)
-            .find({ where: { companyId: companyId as any } });
+            .find({ where: { companyId: String(companyId) } });
         const channels: Channel[] = [];
         for (const t of tenants) {
             channels.push(...await this.getChannelsForTenant(t.id));
@@ -467,7 +499,7 @@ export class TenantService {
                 name: input.name,
                 enabled: true,
                 parentRoleId: role.id,
-                companyId: companyId as any,
+                companyId: companyId as ID,
             }),
         );
 
@@ -476,15 +508,30 @@ export class TenantService {
         const newChannel = await this.channelService.create(ctx, {
             code: channelCode,
             token,
-            defaultLanguageCode: (input.defaultLanguageCode || LanguageCode.en) as any,
-            defaultCurrencyCode: (input.defaultCurrencyCode || CurrencyCode.USD) as any,
+            defaultLanguageCode: (input.defaultLanguageCode || LanguageCode.en) as LanguageCode,
+            defaultCurrencyCode: (input.defaultCurrencyCode || CurrencyCode.USD) as CurrencyCode,
             pricesIncludeTax: false,
-            defaultShippingZoneId: undefined as any,
-            defaultTaxZoneId: undefined as any,
+            defaultShippingZoneId: undefined!,
+            defaultTaxZoneId: undefined!,
+            // customFields is typed as JSON in CreateChannelInput
             customFields: { tenant } as any,
         });
 
-        await this.assignBuiltInRolesToChannel(ctx, (newChannel as any).id);
+        if (isGraphQlErrorResult(newChannel)) {
+            throw new UserInputError(newChannel.message);
+        }
+
+        await this.assignBuiltInRolesToChannel(ctx, newChannel.id);
+
+        // Assign to tenant + company roles
+        await this.roleService.assignRoleToChannel(ctx, tenant.parentRoleId, newChannel.id);
+        if (tenant.companyId) {
+            const company = await this.connection.rawConnection.getRepository(Company)
+                .findOne({ where: { id: tenant.companyId } });
+            if (company) {
+                await this.roleService.assignRoleToChannel(ctx, company.parentRoleId, newChannel.id);
+            }
+        }
 
         await this.connection.rawConnection.getRepository(Seller).save(
             this.connection.rawConnection.getRepository(Seller).create({ name: input.name }),
@@ -496,6 +543,7 @@ export class TenantService {
             emailAddress: input.adminEmail,
             password: input.adminPassword,
             roleIds: [role.id as string],
+            // customFields is typed as JSON in CreateAdministratorInput
             customFields: { tenant } as any,
         });
 

@@ -8,6 +8,7 @@ import {
     Channel,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
+import '../types';
 
 @Injectable()
 export class TenantBoundaryGuard {
@@ -22,7 +23,7 @@ export class TenantBoundaryGuard {
             throw new ForbiddenError();
         }
 
-        const adminTenant = (admin.customFields as any)?.tenant as Tenant | null;
+        const adminTenant = admin.customFields.tenant;
         if (!adminTenant) {
             // SuperAdmin with no tenant — allow everything
             return;
@@ -33,9 +34,7 @@ export class TenantBoundaryGuard {
                 .getRepository(Channel)
                 .findOne({ where: { id: channelId } });
 
-            const channelTenantId =
-                (channel as any)?.customFields?.tenant?.id ??
-                (channel as any)?.customFieldsTenantId;
+            const channelTenantId = channel?.customFields?.tenant?.id;
 
             if (!channelTenantId || String(channelTenantId) !== String(adminTenant.id)) {
                 throw new ForbiddenError();
@@ -49,7 +48,7 @@ export class TenantBoundaryGuard {
             throw new ForbiddenError();
         }
 
-        const adminTenant = (admin.customFields as any)?.tenant as Tenant | null;
+        const adminTenant = admin.customFields.tenant;
         if (!adminTenant) {
             // SuperAdmin — always allowed
             return;

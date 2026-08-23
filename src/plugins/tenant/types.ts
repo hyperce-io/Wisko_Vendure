@@ -1,3 +1,4 @@
+import { Channel, Administrator } from '@vendure/core';
 import { Company } from './entities/company.entity';
 import { Tenant } from './entities/tenant.entity';
 
@@ -78,6 +79,18 @@ export interface UpdateCompanyInput {
     id: string;
     name?: string;
     enabled?: boolean;
+}
+
+// ---- Response interfaces (entities with eagerly-loaded relations) ----
+
+export interface CompanyWithRelations extends Company {
+    channels: Channel[];
+    administrators: Administrator[];
+}
+
+export interface TenantWithRelations extends Tenant {
+    channels: Channel[];
+    administrators: Administrator[];
 }
 
 // ---- Custom field declarations ----

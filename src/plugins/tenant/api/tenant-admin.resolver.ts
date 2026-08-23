@@ -1,6 +1,7 @@
 import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
 import { Allow, Ctx, Permission, RequestContext, Transaction } from '@vendure/core';
 import { TenantService } from '../services/tenant.service';
+import '../types';
 
 @Resolver()
 export class TenantAdminResolver {
@@ -62,7 +63,7 @@ export class TenantAdminResolver {
         // Self-service channel creation remains unchanged
         const admin = await this.tenantService['administratorService'].findOneByUserId(ctx, ctx.activeUserId!);
         if (!admin) throw new Error('Forbidden');
-        const tenant = (admin.customFields as any)?.tenant;
+        const tenant = admin.customFields.tenant;
         if (!tenant) throw new Error('Forbidden');
 
         return this.tenantService.syncChannel(ctx, {

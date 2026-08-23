@@ -8,9 +8,11 @@ import {
     Role,
     Channel,
     Logger,
+    ID,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
+import '../types';
 
 @Injectable()
 export class TenantChannelHandler implements OnApplicationBootstrap {
@@ -79,7 +81,7 @@ export class TenantChannelHandler implements OnApplicationBootstrap {
         }
     }
 
-    private async addChannelToRole(event: ChannelEvent, roleId: any, channelId: any) {
+    private async addChannelToRole(event: ChannelEvent, roleId: ID, channelId: ID) {
         const role = await this.connection.rawConnection
             .getRepository(Role)
             .findOne({ where: { id: roleId }, relations: { channels: true } });
@@ -93,7 +95,7 @@ export class TenantChannelHandler implements OnApplicationBootstrap {
         }
     }
 
-    private async removeChannelFromRole(event: ChannelEvent, roleId: any, channelId: any) {
+    private async removeChannelFromRole(event: ChannelEvent, roleId: ID, channelId: ID) {
         const role = await this.connection.rawConnection
             .getRepository(Role)
             .findOne({ where: { id: roleId }, relations: { channels: true } });
@@ -107,14 +109,12 @@ export class TenantChannelHandler implements OnApplicationBootstrap {
         await this.roleService.update(event.ctx, { id: role.id, channelIds });
     }
 
-    private async getTenantForChannel(channelId: any): Promise<Tenant | null> {
+    private async getTenantForChannel(channelId: ID): Promise<Tenant | null> {
         const channelRow = await this.connection.rawConnection
             .getRepository(Channel)
             .findOne({ where: { id: channelId } });
 
-        const tenantId = (channelRow as any)?.customFields?.tenant?.id
-            ?? (channelRow as any)?.customFieldsTenantId;
-
+        const tenantId = channelRow?.customFields?.tenant?.id;
         if (!tenantId) return null;
 
         return this.connection.rawConnection
