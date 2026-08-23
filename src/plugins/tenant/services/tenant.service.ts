@@ -273,6 +273,10 @@ export class TenantService {
         });
 
         Logger.info(`Created channel: ${channelCode} (erp: ${input.erpChannelId})`, 'TenantService');
+
+        // Ensure SuperAdmin role sees the new channel in the dashboard
+        await this.syncSuperAdminChannels();
+
         return channel as Channel;
     }
 
@@ -307,6 +311,9 @@ export class TenantService {
             const company = await this.findCompanyByCode(ctx, input.companyCode);
             if (company) roleIds = [company.parentRoleId as string];
         } else if (input.role === 'store-staff' && input.channelCodes?.length) {
+            // Ensure SuperAdmin role has access to these channels first
+            await this.syncSuperAdminChannels();
+
             const allChannels = await this.channelService.findAll(ctx);
             const channelList = (allChannels as any).items || allChannels;
             const channelIds = channelList
@@ -398,6 +405,31 @@ export class TenantService {
     }
 
     // ========================================================================
+    // INTERNAL HELPERS
+    // ========================================================================
+
+    /**
+     * Ensures the SuperAdmin role has access to all channels.
+     * Needed because RoleService.create checks if the caller has access
+     * to the target channels, and new channels aren't automatically
+     * added to the SuperAdmin role.
+     */
+    private async syncSuperAdminChannels() {
+        const allChannels = await this.connection.rawConnection.getRepository(Channel).find();
+        const saRole = await this.connection.rawConnection.getRepository(Role).findOne({
+            where: { code: '__super_admin_role__' },
+            relations: { channels: true },
+        });
+        if (!saRole) return;
+        const existingIds = new Set(saRole.channels.map(c => Number(c.id)));
+        const missing = allChannels.filter(c => !existingIds.has(Number(c.id)));
+        if (missing.length > 0) {
+            saRole.channels.push(...missing);
+            await this.connection.rawConnection.getRepository(Role).save(saRole);
+        }
+    }
+
+    // ========================================================================
     // LEGACY (used by GraphQL resolver + seed)
     // ========================================================================
 
@@ -440,6 +472,8 @@ export class TenantService {
             defaultTaxZoneId: undefined as any,
             customFields: { tenant } as any,
         });
+
+        await this.syncSuperAdminChannels();
 
         await this.connection.rawConnection.getRepository(Seller).save(
             this.connection.rawConnection.getRepository(Seller).create({ name: input.name }),
