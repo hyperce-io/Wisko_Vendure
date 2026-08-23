@@ -53,7 +53,16 @@ export class TenantService {
         for (const company of items) {
             const channels = await this.getChannelsForCompany(company.id);
             const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
-            enrichedItems.push(Object.assign(company, { channels, administrators }) as CompanyWithRelations);
+            // Enrich each nested tenant with its channels + admins
+            const enrichedTenants: TenantWithRelations[] = [];
+            if (company.tenants) {
+                for (const tenant of company.tenants) {
+                    const tenantChannels = await this.getChannelsForTenant(tenant.id);
+                    const tenantAdmins = await this.getAdminsForTenant(tenant.id);
+                    enrichedTenants.push(Object.assign(tenant, { channels: tenantChannels, administrators: tenantAdmins }) as TenantWithRelations);
+                }
+            }
+            enrichedItems.push(Object.assign(company, { channels, administrators, tenants: enrichedTenants }) as CompanyWithRelations);
         }
         return { items: enrichedItems, totalItems };
     }
@@ -66,7 +75,15 @@ export class TenantService {
         if (!company) return null;
         const channels = await this.getChannelsForCompany(company.id);
         const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
-        return Object.assign(company, { channels, administrators }) as CompanyWithRelations;
+        const enrichedTenants: TenantWithRelations[] = [];
+        if (company.tenants) {
+            for (const tenant of company.tenants) {
+                const tenantChannels = await this.getChannelsForTenant(tenant.id);
+                const tenantAdmins = await this.getAdminsForTenant(tenant.id);
+                enrichedTenants.push(Object.assign(tenant, { channels: tenantChannels, administrators: tenantAdmins }) as TenantWithRelations);
+            }
+        }
+        return Object.assign(company, { channels, administrators, tenants: enrichedTenants }) as CompanyWithRelations;
     }
 
     async findCompanyByCode(ctx: RequestContext, code: string) {
