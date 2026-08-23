@@ -30,12 +30,12 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
             this.channel = await this.connection.createChannel();
             const ch = this.channel;
 
-            // Dead letter exchange + queue
-            await ch.assertExchange(RABBITMQ_DLX_EXCHANGE, 'fanout', { durable: true });
+            // Dead letter exchange + queue (for failed messages)
+            await ch.assertExchange(RABBITMQ_DLX_EXCHANGE, 'topic', { durable: true });
             await ch.assertQueue(RABBITMQ_DLQ, { durable: true });
-            await ch.bindQueue(RABBITMQ_DLQ, RABBITMQ_DLX_EXCHANGE, '');
+            await ch.bindQueue(RABBITMQ_DLQ, RABBITMQ_DLX_EXCHANGE, '#');
 
-            // Main exchange (topic)
+            // Main exchange (topic for flexible routing)
             await ch.assertExchange(RABBITMQ_EXCHANGE, 'topic', { durable: true });
 
             // Main queue with DLX
@@ -44,20 +44,17 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
                 arguments: { 'x-dead-letter-exchange': RABBITMQ_DLX_EXCHANGE },
             });
 
-            // Bind routing keys
-            for (const key of Object.values(ROUTING_KEYS)) {
-                await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, key);
-            }
-            // Wildcard patterns
+            // Bind routing key patterns
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'company.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'tenant.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'channel.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'admin.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'sync.*');
 
+            // Process one message at a time
             await ch.prefetch(1);
 
-            // Consume
+            // Start consuming
             await ch.consume(RABBITMQ_QUEUE, async (msg) => {
                 if (!msg) return;
                 const routingKey = msg.fields.routingKey;
@@ -71,13 +68,13 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
                     Logger.info(`Processed: ${routingKey}`, 'RabbitMQ');
                 } catch (error: any) {
                     Logger.error(`Error processing ${routingKey}: ${error.message}`, 'RabbitMQ', error.stack);
-                    ch.nack(msg, false, false); // to DLQ
+                    ch.nack(msg, false, false); // send to DLQ
                 }
             });
 
             Logger.info(`Connected — consuming "${RABBITMQ_QUEUE}" (exchange: "${RABBITMQ_EXCHANGE}")`, 'RabbitMQ');
         } catch (error: any) {
-            Logger.warn(`RabbitMQ not available: ${error.message}. Sync via RabbitMQ disabled.`, 'RabbitMQ');
+            Logger.warn(`RabbitMQ not available: ${error.message}`, 'RabbitMQ');
         }
     }
 
@@ -85,7 +82,6 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
         try {
             await this.channel?.close();
             await this.connection?.close();
-            Logger.info('Connection closed', 'RabbitMQ');
         } catch (_) {}
     }
 }
