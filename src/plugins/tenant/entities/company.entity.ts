@@ -1,11 +1,11 @@
 import { DeepPartial, EntityId, ID, VendureEntity } from '@vendure/core';
-import { Column, Entity, ManyToOne } from 'typeorm';
+import { Column, Entity, ManyToOne, OneToMany } from 'typeorm';
 import { Role } from '@vendure/core';
-import { Company } from './company.entity';
+import { Tenant } from './tenant.entity';
 
 @Entity()
-export class Tenant extends VendureEntity {
-    constructor(input?: DeepPartial<Tenant>) {
+export class Company extends VendureEntity {
+    constructor(input?: DeepPartial<Company>) {
         super(input);
     }
 
@@ -18,18 +18,12 @@ export class Tenant extends VendureEntity {
     @Column({ default: true })
     enabled: boolean;
 
-    @Column({ default: 5 })
-    maxChannels: number;
-
     @ManyToOne(() => Role)
     parentRole: Role;
 
     @EntityId()
     parentRoleId: ID;
 
-    @ManyToOne(() => Company, c => c.tenants, { nullable: true })
-    company: Company;
-
-    @EntityId({ nullable: true })
-    companyId: ID;
+    @OneToMany(() => Tenant, t => t.company)
+    tenants: Tenant[];
 }

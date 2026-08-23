@@ -1,17 +1,26 @@
 import { PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendure/core';
 import { Tenant } from './entities/tenant.entity';
+import { Company } from './entities/company.entity';
 import { TenantService } from './services/tenant.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { TenantBoundaryGuard } from './guards/tenant-boundary.guard';
 import { TenantAdminResolver } from './api/tenant-admin.resolver';
 import { adminApiExtensions } from './api/api-extensions';
+import { RabbitMQConsumer } from './rabbitmq/rabbitmq.consumer';
+import { RabbitMQMessageHandler } from './rabbitmq/rabbitmq.handler';
 import './types';
 
 @VendurePlugin({
     imports: [PluginCommonModule],
-    entities: [Tenant],
+    entities: [Tenant, Company],
     compatibility: '^3.0.0',
-    providers: [TenantService, TenantChannelHandler, TenantBoundaryGuard],
+    providers: [
+        TenantService,
+        TenantChannelHandler,
+        TenantBoundaryGuard,
+        RabbitMQConsumer,
+        RabbitMQMessageHandler,
+    ],
     adminApiExtensions: {
         schema: adminApiExtensions,
         resolvers: [TenantAdminResolver],

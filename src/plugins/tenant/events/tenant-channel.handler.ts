@@ -7,8 +7,10 @@ import {
     ProcessContext,
     Role,
     Channel,
+    Logger,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
+import { Company } from '../entities/company.entity';
 
 @Injectable()
 export class TenantChannelHandler implements OnApplicationBootstrap {
@@ -31,64 +33,78 @@ export class TenantChannelHandler implements OnApplicationBootstrap {
                 } else if (event.type === 'deleted') {
                     await this.onChannelDeleted(event);
                 }
-            } catch (err) {
-                // Log but don't crash
-                console.error('TenantChannelHandler error:', err);
+            } catch (err: any) {
+                Logger.error(`TenantChannelHandler error: ${err.message}`, 'TenantChannelHandler');
             }
         });
     }
 
     private async onChannelCreated(event: ChannelEvent) {
         const tenant = await this.getTenantForChannel(event.entity.id);
-        if (!tenant) {
-            return;
+        if (!tenant) return;
+
+        // Step 1: Add channel to tenant's parent role
+        await this.addChannelToRole(event, tenant.parentRoleId, event.entity.id);
+        Logger.info(`Added channel ${event.entity.id} to tenant role (tenant: ${tenant.code})`, 'TenantChannelHandler');
+
+        // Step 2: Add channel to company's parent role (if tenant has a company)
+        if (tenant.companyId) {
+            const company = await this.connection.rawConnection
+                .getRepository(Company)
+                .findOne({ where: { id: tenant.companyId } });
+
+            if (company) {
+                await this.addChannelToRole(event, company.parentRoleId, event.entity.id);
+                Logger.info(`Added channel ${event.entity.id} to company role (company: ${company.code})`, 'TenantChannelHandler');
+            }
         }
-
-        const parentRole = await this.connection.rawConnection
-            .getRepository(Role)
-            .findOne({
-                where: { id: tenant.parentRoleId },
-                relations: { channels: true },
-            });
-
-        if (!parentRole) {
-            return;
-        }
-
-        const channelIds = parentRole.channels.map((ch) => ch.id as string);
-        channelIds.push(event.entity.id as string);
-
-        await this.roleService.update(event.ctx, {
-            id: parentRole.id,
-            channelIds,
-        });
     }
 
     private async onChannelDeleted(event: ChannelEvent) {
         const tenant = await this.getTenantForChannel(event.entity.id);
-        if (!tenant) {
-            return;
-        }
+        if (!tenant) return;
 
-        const parentRole = await this.connection.rawConnection
+        // Step 1: Remove from tenant role
+        await this.removeChannelFromRole(event, tenant.parentRoleId, event.entity.id);
+
+        // Step 2: Remove from company role
+        if (tenant.companyId) {
+            const company = await this.connection.rawConnection
+                .getRepository(Company)
+                .findOne({ where: { id: tenant.companyId } });
+
+            if (company) {
+                await this.removeChannelFromRole(event, company.parentRoleId, event.entity.id);
+            }
+        }
+    }
+
+    private async addChannelToRole(event: ChannelEvent, roleId: any, channelId: any) {
+        const role = await this.connection.rawConnection
             .getRepository(Role)
-            .findOne({
-                where: { id: tenant.parentRoleId },
-                relations: { channels: true },
-            });
+            .findOne({ where: { id: roleId }, relations: { channels: true } });
 
-        if (!parentRole) {
-            return;
+        if (!role) return;
+
+        const channelIds = role.channels.map((ch) => ch.id as string);
+        if (!channelIds.includes(String(channelId))) {
+            channelIds.push(String(channelId));
+            await this.roleService.update(event.ctx, { id: role.id, channelIds });
         }
+    }
 
-        const channelIds = parentRole.channels
-            .filter((ch) => ch.id !== event.entity.id)
+    private async removeChannelFromRole(event: ChannelEvent, roleId: any, channelId: any) {
+        const role = await this.connection.rawConnection
+            .getRepository(Role)
+            .findOne({ where: { id: roleId }, relations: { channels: true } });
+
+        if (!role) return;
+
+        const channelIds = role.channels
+            .filter((ch) => String(ch.id) !== String(channelId))
             .map((ch) => ch.id as string);
 
-        await this.roleService.update(event.ctx, {
-            id: parentRole.id,
-            channelIds,
-        });
+        await this.roleService.update(event.ctx, { id: role.id, channelIds });
     }
 
     private async getTenantForChannel(channelId: any): Promise<Tenant | null> {
@@ -99,12 +115,10 @@ export class TenantChannelHandler implements OnApplicationBootstrap {
         const tenantId = (channelRow as any)?.customFields?.tenant?.id
             ?? (channelRow as any)?.customFieldsTenantId;
 
-        if (!tenantId) {
-            return null;
-        }
+        if (!tenantId) return null;
 
         return this.connection.rawConnection
             .getRepository(Tenant)
-            .findOne({ where: { id: tenantId } });
+            .findOne({ where: { id: tenantId }, relations: { company: true } });
     }
 }

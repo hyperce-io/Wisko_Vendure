@@ -26,6 +26,7 @@ export const adminApiExtensions = gql`
         enabled: Boolean!
         maxChannels: Int!
         parentRoleId: ID!
+        companyId: ID
         channels: [TenantChannel!]!
         administrators: [TenantAdmin!]!
     }
@@ -35,12 +36,31 @@ export const adminApiExtensions = gql`
         totalItems: Int!
     }
 
+    type Company implements Node {
+        id: ID!
+        createdAt: DateTime!
+        updatedAt: DateTime!
+        code: String!
+        name: String!
+        enabled: Boolean!
+        parentRoleId: ID!
+        tenants: [Tenant!]!
+        channels: [TenantChannel!]!
+        administrators: [TenantAdmin!]!
+    }
+
+    type CompanyList {
+        items: [Company!]!
+        totalItems: Int!
+    }
+
     input CreateTenantInput {
         code: String!
         name: String!
         adminEmail: String!
         adminPassword: String!
         channelCode: String
+        companyCode: String
         defaultCurrencyCode: CurrencyCode
         defaultLanguageCode: LanguageCode
     }
@@ -52,10 +72,23 @@ export const adminApiExtensions = gql`
         defaultLanguageCode: LanguageCode
     }
 
+    input CreateCompanyInput {
+        code: String!
+        name: String!
+        adminEmail: String
+        adminPassword: String
+    }
+
+    input UpdateCompanyInput {
+        id: ID!
+        name: String
+        enabled: Boolean
+    }
+
     input SyncChannelFromErpInput {
         erpChannelId: String!
         tenantCode: String!
-        tenantName: String
+        companyCode: String!
         channelCode: String!
         channelToken: String!
         defaultCurrencyCode: CurrencyCode
@@ -72,11 +105,15 @@ export const adminApiExtensions = gql`
     extend type Query {
         tenants: TenantList!
         tenant(id: ID!): Tenant
+        companies: CompanyList!
+        company(id: ID!): Company
     }
 
     extend type Mutation {
         createTenant(input: CreateTenantInput!): Tenant!
         createTenantChannel(input: CreateTenantChannelInput!): Channel!
+        createCompany(input: CreateCompanyInput!): Company!
+        updateCompany(input: UpdateCompanyInput!): Company!
         syncChannelFromErp(input: SyncChannelFromErpInput!): Channel!
         updateTenant(input: UpdateTenantInput!): Tenant!
     }

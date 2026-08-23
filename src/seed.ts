@@ -191,7 +191,7 @@ async function seed() {
         channelCode: 'jordan-main',
     });
     // Update maxChannels to 3
-    await tenantService.update(ctx, { id: jordan.id, maxChannels: 3 });
+    await tenantService.update(ctx, { id: jordan.id as string, maxChannels: 3 });
     Logger.info(`  ✓ Tenant "Jordan" created (id=${jordan.id}, maxChannels=3)`, 'Seed');
 
     const jordanChannel2 = await channelService.create(ctx, {
@@ -211,30 +211,32 @@ async function seed() {
     // =========================================================================
     await syncSuperAdminChannels();
     Logger.info('Simulating ERP sync for Adidas...', 'Seed');
-    const adidasChannel1 = await tenantService.syncFromErp(ctx, {
-        erpChannelId: 'ERP-ADI-001',
+    // First create adidas tenant via syncTenant
+    await tenantService.syncCompany(ctx, { code: 'adidas', name: 'Adidas' });
+    await tenantService.syncTenant(ctx, { companyCode: 'adidas', code: 'adidas', name: 'Adidas' });
+
+    const adidasChannel1 = await tenantService.syncChannel(ctx, {
+        companyCode: 'adidas',
         tenantCode: 'adidas',
-        tenantName: 'Adidas',
-        channelCode: 'adidas-originals',
-        channelToken: `adidas-originals-${Date.now().toString(36)}`,
+        erpChannelId: 'ERP-ADI-001',
+        code: 'adidas-originals',
     });
     Logger.info(`  ✓ ERP sync: tenant "Adidas" auto-created + channel "adidas-originals"`, 'Seed');
 
-    const adidasChannel2 = await tenantService.syncFromErp(ctx, {
-        erpChannelId: 'ERP-ADI-002',
+    const adidasChannel2 = await tenantService.syncChannel(ctx, {
+        companyCode: 'adidas',
         tenantCode: 'adidas',
-        tenantName: 'Adidas',
-        channelCode: 'adidas-performance',
-        channelToken: `adidas-performance-${Date.now().toString(36)}`,
+        erpChannelId: 'ERP-ADI-002',
+        code: 'adidas-performance',
     });
     Logger.info(`  ✓ ERP sync: channel "adidas-performance" added to existing Adidas tenant`, 'Seed');
 
     // Re-sync the same ERP id (idempotent test)
-    await tenantService.syncFromErp(ctx, {
-        erpChannelId: 'ERP-ADI-001',
+    await tenantService.syncChannel(ctx, {
+        companyCode: 'adidas',
         tenantCode: 'adidas',
-        channelCode: 'adidas-originals',
-        channelToken: `adidas-originals-${Date.now().toString(36)}`,
+        erpChannelId: 'ERP-ADI-001',
+        code: 'adidas-originals',
     });
     Logger.info(`  ✓ ERP re-sync of ERP-ADI-001: updated (not duplicated)`, 'Seed');
 
