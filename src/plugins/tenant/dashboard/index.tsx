@@ -1,311 +1,332 @@
-import { defineDashboardExtension } from '@vendure/dashboard';
-import React, { useState, useEffect } from 'react';
+import {
+    defineDashboardExtension,
+    api,
+    useQuery,
+    useMutation,
+    useQueryClient,
+    Card,
+    Badge,
+    Button,
+    toast,
+    Page,
+    PageBlock,
+    PageLayout,
+} from '@vendure/dashboard';
+import { graphql } from '@/gql';
+import React from 'react';
 
-interface TenantChannel {
-    id: string;
-    code: string;
-    token: string;
-    defaultCurrencyCode: string;
-    defaultLanguageCode: string;
-    pricesIncludeTax: boolean;
-}
+// ---- GraphQL Documents ----
 
-interface TenantAdmin {
-    id: string;
-    firstName: string;
-    lastName: string;
-    emailAddress: string;
-}
-
-interface TenantData {
-    id: string;
-    code: string;
-    name: string;
-    enabled: boolean;
-    maxChannels: number;
-    parentRoleId: string;
-    channels: TenantChannel[];
-    administrators: TenantAdmin[];
-}
-
-async function gqlFetch(query: string, variables?: any) {
-    const apiUrl = window.location.port === '5173'
-        ? 'http://localhost:3000/admin-api'
-        : '/admin-api';
-    const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ query, variables }),
-    });
-    return res.json();
-}
-
-function StatusBadge({ enabled }: { enabled: boolean }) {
-    return (
-        <span
-            style={{
-                display: 'inline-block',
-                padding: '2px 10px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: enabled ? '#dcfce7' : '#fee2e2',
-                color: enabled ? '#16a34a' : '#dc2626',
-            }}
-        >
-            {enabled ? 'Active' : 'Suspended'}
-        </span>
-    );
-}
-
-function TenantListPage() {
-    const [tenants, setTenants] = useState<TenantData[]>([]);
-    const [totalItems, setTotalItems] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [expandedId, setExpandedId] = useState<string | null>(null);
-
-    const fetchTenants = async () => {
-        setLoading(true);
-        try {
-            const json = await gqlFetch(`query {
+const getCompaniesQuery = graphql(`
+    query GetCompanies {
+        companies {
+            items {
+                id
+                code
+                name
+                enabled
+                parentRoleId
                 tenants {
-                    items {
-                        id code name enabled maxChannels parentRoleId
-                        channels { id code token defaultCurrencyCode defaultLanguageCode pricesIncludeTax }
-                        administrators { id firstName lastName emailAddress }
+                    id
+                    code
+                    name
+                    enabled
+                    maxChannels
+                    parentRoleId
+                    channels {
+                        id
+                        code
+                        token
+                        defaultCurrencyCode
+                        defaultLanguageCode
+                        pricesIncludeTax
                     }
-                    totalItems
+                    administrators {
+                        id
+                        firstName
+                        lastName
+                        emailAddress
+                    }
                 }
-            }`);
-            if (json.errors) {
-                setError(json.errors[0]?.message || 'Failed to fetch');
-            } else {
-                setTenants(json.data.tenants.items);
-                setTotalItems(json.data.tenants.totalItems);
+                channels {
+                    id
+                    code
+                    defaultCurrencyCode
+                }
+                administrators {
+                    id
+                    firstName
+                    lastName
+                    emailAddress
+                }
             }
-        } catch (e: any) {
-            setError(e.message);
+            totalItems
         }
-        setLoading(false);
-    };
+    }
+`);
 
-    const toggleEnabled = async (t: TenantData) => {
-        await gqlFetch(
-            `mutation($input: UpdateTenantInput!) { updateTenant(input: $input) { id } }`,
-            { input: { id: t.id, enabled: !t.enabled } },
+const updateCompanyMutation = graphql(`
+    mutation UpdateCompany($input: UpdateCompanyInput!) {
+        updateCompany(input: $input) {
+            id
+            enabled
+        }
+    }
+`);
+
+const updateTenantMutation = graphql(`
+    mutation UpdateTenant($input: UpdateTenantInput!) {
+        updateTenant(input: $input) {
+            id
+            enabled
+        }
+    }
+`);
+
+// ---- Main Page ----
+
+function OrganizationsPage() {
+    const queryClient = useQueryClient();
+
+    const { data, isLoading, error } = useQuery({
+        queryKey: ['companies'],
+        queryFn: () => api.query(getCompaniesQuery),
+    });
+
+    const toggleCompany = useMutation({
+        mutationFn: (input: { id: string; enabled: boolean }) =>
+            api.mutate(updateCompanyMutation, { input }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['companies'] });
+            toast.success('Company updated');
+        },
+        onError: (err: any) => toast.error(err.message),
+    });
+
+    const toggleTenant = useMutation({
+        mutationFn: (input: { id: string; enabled: boolean }) =>
+            api.mutate(updateTenantMutation, { input }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['companies'] });
+            toast.success('Tenant updated');
+        },
+        onError: (err: any) => toast.error(err.message),
+    });
+
+    const companies = data?.companies?.items ?? [];
+    const totalCompanies = companies.length;
+    const totalTenants = companies.reduce((s, c) => s + (c.tenants?.length ?? 0), 0);
+    const totalChannels = companies.reduce((s, c) => s + (c.channels?.length ?? 0), 0);
+    const activeCompanies = companies.filter(c => c.enabled).length;
+
+    const [expandedCompany, setExpandedCompany] = React.useState<string | null>(null);
+    const [expandedTenant, setExpandedTenant] = React.useState<string | null>(null);
+
+    if (isLoading) {
+        return (
+            <div className="p-6">
+                <h1 className="text-2xl font-bold mb-2">Organizations</h1>
+                <p className="text-muted-foreground">Loading...</p>
+            </div>
         );
-        fetchTenants();
-    };
+    }
 
-    useEffect(() => {
-        fetchTenants();
-    }, []);
-
-    const toggle = (id: string) => setExpandedId(expandedId === id ? null : id);
-
-    const active = tenants.filter((t) => t.enabled).length;
-    const suspended = tenants.filter((t) => !t.enabled).length;
-    const totalChannels = tenants.reduce((sum, t) => sum + t.channels.length, 0);
-    const totalAdmins = tenants.reduce((sum, t) => sum + t.administrators.length, 0);
-
-    const stats = [
-        { label: 'Total Tenants', value: totalItems, bg: '#f8f9fa', color: '#111' },
-        { label: 'Active', value: active, bg: '#f0fdf4', color: '#16a34a' },
-        { label: 'Suspended', value: suspended, bg: '#fef2f2', color: '#dc2626' },
-        { label: 'Total Channels', value: totalChannels, bg: '#eff6ff', color: '#2563eb' },
-        { label: 'Total Admins', value: totalAdmins, bg: '#faf5ff', color: '#7c3aed' },
-    ];
+    if (error) {
+        return (
+            <div className="p-6">
+                <h1 className="text-2xl font-bold mb-2">Organizations</h1>
+                <p className="text-destructive">Error: {error.message}</p>
+            </div>
+        );
+    }
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 6px 0' }}>Tenants</h1>
-            <p style={{ color: '#666', margin: '0 0 24px 0', fontSize: '14px' }}>
-                Manage your multi-tenant organizations, their channels and administrators.
-            </p>
+        <div className="p-6 max-w-[1400px] mx-auto">
+            <h1 className="text-2xl font-bold mb-1">Organizations</h1>
+            <p className="text-muted-foreground text-sm mb-5">Company → Tenant → Channel hierarchy</p>
 
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
-                {stats.map((s) => (
-                    <div key={s.label} style={{ padding: '14px 22px', background: s.bg, borderRadius: '8px', minWidth: '120px' }}>
-                        <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                            {s.label}
-                        </div>
-                        <div style={{ fontSize: '26px', fontWeight: 700, color: s.color }}>{s.value}</div>
+            {/* Stats */}
+            <div className="flex gap-3 flex-wrap mb-5">
+                <StatCard label="Companies" value={totalCompanies} />
+                <StatCard label="Active" value={activeCompanies} variant="success" />
+                <StatCard label="Tenants" value={totalTenants} variant="info" />
+                <StatCard label="Channels" value={totalChannels} variant="purple" />
+            </div>
+
+            {/* Company list */}
+            <Card className="overflow-hidden">
+                {companies.length === 0 ? (
+                    <div className="p-10 text-center text-muted-foreground">
+                        No companies yet. Send events via RabbitMQ to create.
                     </div>
-                ))}
-            </div>
-
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
-                {loading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>Loading...</div>
-                ) : error ? (
-                    <div style={{ padding: '20px', color: '#dc2626' }}>Error: {error}</div>
-                ) : tenants.length === 0 ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>No tenants yet.</div>
                 ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
-                                <th style={th}></th>
-                                <th style={th}>Code</th>
-                                <th style={th}>Name</th>
-                                <th style={th}>Status</th>
-                                <th style={th}>Channels</th>
-                                <th style={th}>Admins</th>
-                                <th style={th}>Max</th>
-                                <th style={th}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {tenants.map((t) => (
-                                <React.Fragment key={t.id}>
-                                    <tr
-                                        style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
-                                        onClick={() => toggle(t.id)}
-                                    >
-                                        <td style={td}>
-                                            <span
-                                                style={{
-                                                    fontSize: '12px',
-                                                    color: '#999',
-                                                    display: 'inline-block',
-                                                    transform: expandedId === t.id ? 'rotate(90deg)' : 'rotate(0deg)',
-                                                    transition: 'transform 0.2s',
-                                                }}
-                                            >
-                                                &#9654;
-                                            </span>
-                                        </td>
-                                        <td style={td}>
-                                            <code style={codeSt}>{t.code}</code>
-                                        </td>
-                                        <td style={{ ...td, fontWeight: 500 }}>{t.name}</td>
-                                        <td style={td}>
-                                            <StatusBadge enabled={t.enabled} />
-                                        </td>
-                                        <td style={td}>
-                                            <span style={{ fontWeight: 600 }}>{t.channels.length}</span>
-                                            <span style={{ color: '#999', marginLeft: '4px' }}>/ {t.maxChannels}</span>
-                                        </td>
-                                        <td style={td}>{t.administrators.length}</td>
-                                        <td style={td}>{t.maxChannels}</td>
-                                        <td style={td} onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={() => toggleEnabled(t)}
-                                                style={{
-                                                    padding: '4px 12px',
-                                                    borderRadius: '6px',
-                                                    border: '1px solid #d1d5db',
-                                                    background: t.enabled ? '#fef2f2' : '#f0fdf4',
-                                                    color: t.enabled ? '#dc2626' : '#16a34a',
-                                                    cursor: 'pointer',
-                                                    fontSize: '12px',
-                                                    fontWeight: 500,
-                                                }}
-                                            >
-                                                {t.enabled ? 'Suspend' : 'Activate'}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {expandedId === t.id && (
-                                        <tr>
-                                            <td colSpan={8} style={{ padding: '0 16px 16px 40px', background: '#fafbfc' }}>
-                                                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', paddingTop: '12px' }}>
-                                                    <div style={card}>
-                                                        <div style={cardTitleSt}>Channels ({t.channels.length})</div>
-                                                        {t.channels.length === 0 ? (
-                                                            <div style={{ color: '#999', fontSize: '13px' }}>No channels</div>
-                                                        ) : (
-                                                            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                                                                <thead>
-                                                                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                                                        <th style={sTh}>Code</th>
-                                                                        <th style={sTh}>Currency</th>
-                                                                        <th style={sTh}>Language</th>
-                                                                        <th style={sTh}>Tax incl.</th>
-                                                                        <th style={sTh}>Token</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {t.channels.map((ch) => (
-                                                                        <tr key={ch.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                                            <td style={sTd}>
-                                                                                <code style={codeSt}>{ch.code}</code>
-                                                                            </td>
-                                                                            <td style={sTd}>
-                                                                                <span style={tag}>{ch.defaultCurrencyCode}</span>
-                                                                            </td>
-                                                                            <td style={sTd}>{ch.defaultLanguageCode}</td>
-                                                                            <td style={sTd}>{ch.pricesIncludeTax ? 'Yes' : 'No'}</td>
-                                                                            <td style={sTd}>
-                                                                                <code style={{ fontSize: '11px', color: '#999' }}>{ch.token}</code>
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        )}
+                    <div className="divide-y">
+                        {companies.map(company => (
+                            <div key={company.id}>
+                                {/* Company Row */}
+                                <div
+                                    className="flex items-center gap-3 px-5 py-3.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                                    onClick={() => setExpandedCompany(expandedCompany === company.id ? null : company.id)}
+                                >
+                                    <span className={`text-xs text-muted-foreground transition-transform ${expandedCompany === company.id ? 'rotate-90' : ''}`}>
+                                        &#9654;
+                                    </span>
+                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 text-[10px]">COMPANY</Badge>
+                                    <code className="bg-muted px-2 py-0.5 rounded text-xs">{company.code}</code>
+                                    <span className="font-semibold">{company.name}</span>
+                                    <Badge variant={company.enabled ? 'default' : 'destructive'} className="text-[10px]">
+                                        {company.enabled ? 'Active' : 'Suspended'}
+                                    </Badge>
+                                    <span className="text-muted-foreground text-xs">{company.tenants?.length ?? 0} tenants</span>
+                                    <span className="text-muted-foreground text-xs">{company.channels?.length ?? 0} channels</span>
+                                    <div className="ml-auto" onClick={e => e.stopPropagation()}>
+                                        <Button
+                                            size="sm"
+                                            variant={company.enabled ? 'destructive' : 'default'}
+                                            onClick={() => toggleCompany.mutate({ id: company.id, enabled: !company.enabled })}
+                                        >
+                                            {company.enabled ? 'Suspend' : 'Activate'}
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Expanded: Company details */}
+                                {expandedCompany === company.id && (
+                                    <div className="pl-10 bg-muted/30 pb-2">
+                                        {/* Company admins */}
+                                        {(company.administrators?.length ?? 0) > 0 && (
+                                            <div className="flex items-center gap-2 py-2 text-xs border-b border-border/50">
+                                                <span className="font-semibold text-muted-foreground">ADMINS:</span>
+                                                {company.administrators?.map(a => (
+                                                    <Badge key={a.id} variant="secondary" className="text-[11px]">
+                                                        {a.firstName} {a.lastName} ({a.emailAddress})
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Tenants */}
+                                        {(company.tenants?.length ?? 0) === 0 ? (
+                                            <p className="text-muted-foreground text-sm py-3">No tenants</p>
+                                        ) : (
+                                            company.tenants?.map(tenant => (
+                                                <div key={tenant.id} className="border-b border-border/30 last:border-0">
+                                                    {/* Tenant Row */}
+                                                    <div
+                                                        className="flex items-center gap-2.5 py-3 pr-5 cursor-pointer hover:bg-muted/30 transition-colors"
+                                                        onClick={() => setExpandedTenant(expandedTenant === tenant.id ? null : tenant.id)}
+                                                    >
+                                                        <span className={`text-[10px] text-muted-foreground transition-transform ${expandedTenant === tenant.id ? 'rotate-90' : ''}`}>
+                                                            &#9654;
+                                                        </span>
+                                                        <Badge variant="outline" className="bg-indigo-50 text-indigo-700 text-[10px]">TENANT</Badge>
+                                                        <code className="bg-muted px-2 py-0.5 rounded text-xs">{tenant.code}</code>
+                                                        <span className="font-medium text-sm">{tenant.name}</span>
+                                                        <Badge variant={tenant.enabled ? 'default' : 'destructive'} className="text-[10px]">
+                                                            {tenant.enabled ? 'Active' : 'Suspended'}
+                                                        </Badge>
+                                                        <span className="text-muted-foreground text-xs">{tenant.channels?.length ?? 0} ch</span>
+                                                        <span className="text-muted-foreground text-xs">{tenant.administrators?.length ?? 0} admins</span>
+                                                        <div className="ml-auto" onClick={e => e.stopPropagation()}>
+                                                            <Button
+                                                                size="sm"
+                                                                variant={tenant.enabled ? 'destructive' : 'default'}
+                                                                onClick={() => toggleTenant.mutate({ id: tenant.id, enabled: !tenant.enabled })}
+                                                            >
+                                                                {tenant.enabled ? 'Suspend' : 'Activate'}
+                                                            </Button>
+                                                        </div>
                                                     </div>
-                                                    <div style={card}>
-                                                        <div style={cardTitleSt}>Administrators ({t.administrators.length})</div>
-                                                        {t.administrators.length === 0 ? (
-                                                            <div style={{ color: '#999', fontSize: '13px' }}>
-                                                                No admins (ERP-provisioned tenant)
-                                                            </div>
-                                                        ) : (
-                                                            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                                                                <thead>
-                                                                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                                                        <th style={sTh}>Name</th>
-                                                                        <th style={sTh}>Email</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {t.administrators.map((a) => (
-                                                                        <tr key={a.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                                            <td style={sTd}>
-                                                                                {a.firstName} {a.lastName}
-                                                                            </td>
-                                                                            <td style={sTd}>
-                                                                                <code style={{ fontSize: '12px' }}>{a.emailAddress}</code>
-                                                                            </td>
-                                                                        </tr>
+
+                                                    {/* Expanded: Tenant details */}
+                                                    {expandedTenant === tenant.id && (
+                                                        <div className="pl-8 pb-3">
+                                                            {/* Tenant admins */}
+                                                            {(tenant.administrators?.length ?? 0) > 0 && (
+                                                                <div className="flex items-center gap-2 py-2 text-xs">
+                                                                    <span className="font-semibold text-muted-foreground">Admins:</span>
+                                                                    {tenant.administrators?.map(a => (
+                                                                        <Badge key={a.id} variant="secondary" className="text-[11px]">
+                                                                            {a.firstName} {a.lastName} ({a.emailAddress})
+                                                                        </Badge>
                                                                     ))}
-                                                                </tbody>
-                                                            </table>
-                                                        )}
-                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Channels table */}
+                                                            {(tenant.channels?.length ?? 0) === 0 ? (
+                                                                <p className="text-muted-foreground text-xs py-2">No channels</p>
+                                                            ) : (
+                                                                <table className="w-full text-xs mt-1">
+                                                                    <thead>
+                                                                        <tr className="border-b text-left">
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Channel</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Currency</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Language</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Tax incl.</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Token</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {tenant.channels?.map(ch => (
+                                                                            <tr key={ch.id} className="border-b border-border/30">
+                                                                                <td className="px-2 py-1.5">
+                                                                                    <Badge variant="outline" className="bg-amber-50 text-amber-800 text-[10px] mr-1">CH</Badge>
+                                                                                    <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">{ch.code}</code>
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5">
+                                                                                    <Badge variant="outline" className="text-[10px]">{ch.defaultCurrencyCode}</Badge>
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5">{ch.defaultLanguageCode}</td>
+                                                                                <td className="px-2 py-1.5">{ch.pricesIncludeTax ? 'Yes' : 'No'}</td>
+                                                                                <td className="px-2 py-1.5 text-muted-foreground">
+                                                                                    <code className="text-[10px]">{ch.token}</code>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </React.Fragment>
-                            ))}
-                        </tbody>
-                    </table>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 )}
-            </div>
+            </Card>
         </div>
     );
 }
 
-const th: React.CSSProperties = { padding: '10px 12px', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.3px', color: '#666' };
-const td: React.CSSProperties = { padding: '12px' };
-const sTh: React.CSSProperties = { padding: '6px 10px', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', color: '#888', textAlign: 'left' };
-const sTd: React.CSSProperties = { padding: '6px 10px' };
-const codeSt: React.CSSProperties = { background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontSize: '13px' };
-const tag: React.CSSProperties = { background: '#eff6ff', color: '#2563eb', padding: '1px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 500 };
-const card: React.CSSProperties = { flex: '1 1 300px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', minWidth: '300px' };
-const cardTitleSt: React.CSSProperties = { fontWeight: 600, fontSize: '14px', marginBottom: '12px', color: '#333' };
+// ---- Stat Card ----
+
+function StatCard({ label, value, variant = 'default' }: { label: string; value: number; variant?: string }) {
+    const colors: Record<string, string> = {
+        default: 'bg-muted',
+        success: 'bg-green-50 text-green-700',
+        info: 'bg-blue-50 text-blue-700',
+        purple: 'bg-purple-50 text-purple-700',
+    };
+    return (
+        <div className={`px-5 py-3 rounded-lg min-w-[110px] ${colors[variant] || colors.default}`}>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</div>
+            <div className="text-2xl font-bold">{value}</div>
+        </div>
+    );
+}
+
+// ---- Register Extension ----
 
 defineDashboardExtension({
-    routes: [
-        {
-            path: '/tenants',
-            loader: () => ({ breadcrumb: 'Tenants' }),
-            navMenuItem: { id: 'tenants', title: 'Tenants', sectionId: 'settings' },
-            component: TenantListPage,
-        },
-    ],
+    routes: [{
+        path: '/organizations',
+        loader: () => ({ breadcrumb: 'Organizations' }),
+        navMenuItem: { id: 'organizations', title: 'Organizations', sectionId: 'settings' },
+        component: OrganizationsPage,
+    }],
 });
