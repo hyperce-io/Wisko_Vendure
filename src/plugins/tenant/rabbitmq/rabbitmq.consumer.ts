@@ -6,7 +6,6 @@ import {
     RABBITMQ_QUEUE,
     RABBITMQ_DLX_EXCHANGE,
     RABBITMQ_DLQ,
-    ROUTING_KEYS,
 } from './rabbitmq.constants';
 import { RabbitMQMessageHandler } from './rabbitmq.handler';
 
@@ -14,14 +13,22 @@ import { RabbitMQMessageHandler } from './rabbitmq.handler';
 export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationShutdown {
     private connection: amqp.ChannelModel | null = null;
     private channel: amqp.Channel | null = null;
+    private started = false;
 
     constructor(
         private processContext: ProcessContext,
         private messageHandler: RabbitMQMessageHandler,
     ) {}
 
+    // Auto-called by NestJS — we skip here since worker doesn't trigger it for plugin providers.
+    // Instead, index-worker.ts calls startConsuming() manually.
     async onApplicationBootstrap() {
-        if (!this.processContext.isServer) return;
+        // no-op — consumer is started manually from index-worker.ts
+    }
+
+    async startConsuming() {
+        if (this.started) return;
+        this.started = true;
 
         const url = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
 
@@ -30,12 +37,12 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
             this.channel = await this.connection.createChannel();
             const ch = this.channel;
 
-            // Dead letter exchange + queue (for failed messages)
+            // Dead letter exchange + queue
             await ch.assertExchange(RABBITMQ_DLX_EXCHANGE, 'topic', { durable: true });
             await ch.assertQueue(RABBITMQ_DLQ, { durable: true });
             await ch.bindQueue(RABBITMQ_DLQ, RABBITMQ_DLX_EXCHANGE, '#');
 
-            // Main exchange (topic for flexible routing)
+            // Main exchange (topic)
             await ch.assertExchange(RABBITMQ_EXCHANGE, 'topic', { durable: true });
 
             // Main queue with DLX
@@ -51,10 +58,8 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'admin.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'sync.*');
 
-            // Process one message at a time
             await ch.prefetch(1);
 
-            // Start consuming
             await ch.consume(RABBITMQ_QUEUE, async (msg) => {
                 if (!msg) return;
                 const routingKey = msg.fields.routingKey;
@@ -68,7 +73,7 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
                     Logger.info(`Processed: ${routingKey}`, 'RabbitMQ');
                 } catch (error: any) {
                     Logger.error(`Error processing ${routingKey}: ${error.message}`, 'RabbitMQ', error.stack);
-                    ch.nack(msg, false, false); // send to DLQ
+                    ch.nack(msg, false, false);
                 }
             });
 
