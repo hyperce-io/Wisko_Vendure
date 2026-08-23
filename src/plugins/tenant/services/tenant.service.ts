@@ -274,8 +274,9 @@ export class TenantService {
 
         Logger.info(`Created channel: ${channelCode} (erp: ${input.erpChannelId})`, 'TenantService');
 
-        // Ensure SuperAdmin role sees the new channel in the dashboard
-        await this.syncSuperAdminChannels();
+        // Assign SuperAdmin + Customer roles to the new channel
+        // (same as what Vendure's createChannel resolver does)
+        await this.assignBuiltInRolesToChannel(ctx, (channel as Channel).id);
 
         return channel as Channel;
     }
@@ -409,10 +410,20 @@ export class TenantService {
     // ========================================================================
 
     /**
+     * Assigns SuperAdmin + Customer roles to a new channel.
+     * This is what Vendure's createChannel GraphQL resolver does internally,
+     * but we bypass the resolver when calling channelService.create() directly.
+     */
+    private async assignBuiltInRolesToChannel(ctx: RequestContext, channelId: ID) {
+        const superAdminRole = await this.roleService.getSuperAdminRole(ctx);
+        const customerRole = await this.roleService.getCustomerRole(ctx);
+        await this.roleService.assignRoleToChannel(ctx, superAdminRole.id, channelId);
+        await this.roleService.assignRoleToChannel(ctx, customerRole.id, channelId);
+    }
+
+    /**
      * Ensures the SuperAdmin role has access to all channels.
-     * Needed because RoleService.create checks if the caller has access
-     * to the target channels, and new channels aren't automatically
-     * added to the SuperAdmin role.
+     * Fallback for cases where assignBuiltInRolesToChannel wasn't called.
      */
     private async syncSuperAdminChannels() {
         const allChannels = await this.connection.rawConnection.getRepository(Channel).find();
@@ -462,7 +473,7 @@ export class TenantService {
 
         const channelCode = input.channelCode || input.code;
         const token = `${channelCode}-${Date.now().toString(36)}`;
-        await this.channelService.create(ctx, {
+        const newChannel = await this.channelService.create(ctx, {
             code: channelCode,
             token,
             defaultLanguageCode: (input.defaultLanguageCode || LanguageCode.en) as any,
@@ -473,7 +484,7 @@ export class TenantService {
             customFields: { tenant } as any,
         });
 
-        await this.syncSuperAdminChannels();
+        await this.assignBuiltInRolesToChannel(ctx, (newChannel as any).id);
 
         await this.connection.rawConnection.getRepository(Seller).save(
             this.connection.rawConnection.getRepository(Seller).create({ name: input.name }),
