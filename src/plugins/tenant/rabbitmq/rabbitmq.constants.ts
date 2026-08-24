@@ -20,5 +20,11 @@ export const ROUTING_KEYS = {
     ADMIN_UPDATED: 'admin.updated',
     ADMIN_DEACTIVATED: 'admin.deactivated',
 
+    PRODUCT_CREATED: 'product.created',
+    PRODUCT_UPDATED: 'product.updated',
+    PRODUCT_DELETED: 'product.deleted',
+    PRODUCT_ASSIGNED: 'product.assigned',
+    PRODUCT_REMOVED: 'product.removed',
+
     SYNC_FULL: 'sync.full',
 } as const;

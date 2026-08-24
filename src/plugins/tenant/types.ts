@@ -81,6 +81,38 @@ export interface UpdateCompanyInput {
     enabled?: boolean;
 }
 
+// ---- Product sync input types ----
+
+export interface ProductVariantInput {
+    sku: string;
+    name: string;
+    price: number;
+    stockOnHand?: number;
+    trackInventory?: boolean;
+    enabled?: boolean;
+}
+
+export interface SyncProductInput {
+    erpProductId: string;
+    name: string;
+    slug?: string;
+    description?: string;
+    enabled?: boolean;
+    variants: ProductVariantInput[];
+    channelCodes?: string[];
+}
+
+export interface AssignProductToChannelInput {
+    erpProductId: string;
+    channelCodes: string[];
+    priceFactor?: number;
+}
+
+export interface RemoveProductFromChannelInput {
+    erpProductId: string;
+    channelCodes: string[];
+}
+
 // ---- Response interfaces (entities with eagerly-loaded relations) ----
 
 export interface CompanyWithRelations extends Company {
