@@ -10,7 +10,7 @@ import {
     LanguageCode,
     TransactionalConnection,
 } from '@vendure/core';
-import { SyncProductInput, AssignProductToChannelInput, RemoveProductFromChannelInput } from '../types';
+import { SyncProductInput } from '../types';
 import { GlobalFlag } from '@vendure/common/lib/generated-types';
 import '../types';
 
@@ -23,11 +23,12 @@ export class ProductSyncService {
         private connection: TransactionalConnection,
     ) {}
 
-    async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product> {
+    async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product | undefined> {
         const slug = input.slug || `erp-${input.erpProductId}`;
         let product = await this.findByErpId(ctx, input.erpProductId);
 
         if (!product) {
+            // Create product
             const created = await this.productService.create(ctx, {
                 enabled: input.enabled !== false,
                 translations: [{
@@ -40,19 +41,42 @@ export class ProductSyncService {
             product = created as unknown as Product;
             Logger.info(`Created product: ${input.name} (erp: ${input.erpProductId})`, 'ProductSync');
 
+            // Create variants ONE AT A TIME to avoid option-combination conflict
             if (input.variants?.length) {
-                await this.productVariantService.create(ctx, input.variants.map(v => ({
-                    productId: product!.id,
-                    sku: v.sku,
-                    price: v.price,
-                    stockOnHand: v.stockOnHand ?? 0,
-                    trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
-                    enabled: v.enabled !== false,
-                    translations: [{ languageCode: LanguageCode.en, name: v.name }],
-                })));
-                Logger.info(`Created ${input.variants.length} variants`, 'ProductSync');
+                for (const v of input.variants) {
+                    try {
+                        await this.productVariantService.create(ctx, [{
+                            productId: product.id,
+                            sku: v.sku,
+                            price: v.price,
+                            stockOnHand: v.stockOnHand ?? 0,
+                            trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
+                            enabled: v.enabled !== false,
+                            translations: [{ languageCode: LanguageCode.en, name: v.name }],
+                        }]);
+                        Logger.info(`Created variant: ${v.sku}`, 'ProductSync');
+                    } catch (e: any) {
+                        // If variant with same option combo exists, update it instead
+                        const existing = await this.findVariantBySku(ctx, v.sku);
+                        if (existing) {
+                            await this.productVariantService.update(ctx, [{
+                                id: existing.id as ID,
+                                sku: v.sku,
+                                price: v.price,
+                                stockOnHand: v.stockOnHand,
+                                trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
+                                enabled: v.enabled,
+                                translations: [{ languageCode: LanguageCode.en, name: v.name }],
+                            }]);
+                            Logger.info(`Updated existing variant: ${v.sku}`, 'ProductSync');
+                        } else {
+                            Logger.warn(`Variant ${v.sku} error: ${e.message}`, 'ProductSync');
+                        }
+                    }
+                }
             }
         } else {
+            // Update existing product
             await this.productService.update(ctx, {
                 id: product.id,
                 enabled: input.enabled,
@@ -65,6 +89,7 @@ export class ProductSyncService {
             });
             Logger.info(`Updated product: ${input.name} (erp: ${input.erpProductId})`, 'ProductSync');
 
+            // Update/create variants by SKU
             if (input.variants?.length) {
                 for (const v of input.variants) {
                     const existing = await this.findVariantBySku(ctx, v.sku);
@@ -78,21 +103,28 @@ export class ProductSyncService {
                             enabled: v.enabled,
                             translations: [{ languageCode: LanguageCode.en, name: v.name }],
                         }]);
+                        Logger.info(`Updated variant: ${v.sku}`, 'ProductSync');
                     } else {
-                        await this.productVariantService.create(ctx, [{
-                            productId: product.id,
-                            sku: v.sku,
-                            price: v.price,
-                            stockOnHand: v.stockOnHand ?? 0,
-                            trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
-                            enabled: v.enabled !== false,
-                            translations: [{ languageCode: LanguageCode.en, name: v.name }],
-                        }]);
+                        try {
+                            await this.productVariantService.create(ctx, [{
+                                productId: product.id,
+                                sku: v.sku,
+                                price: v.price,
+                                stockOnHand: v.stockOnHand ?? 0,
+                                trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
+                                enabled: v.enabled !== false,
+                                translations: [{ languageCode: LanguageCode.en, name: v.name }],
+                            }]);
+                            Logger.info(`Created new variant: ${v.sku}`, 'ProductSync');
+                        } catch (e: any) {
+                            Logger.warn(`Variant ${v.sku} create error: ${e.message}`, 'ProductSync');
+                        }
                     }
                 }
             }
         }
 
+        // Assign to channels
         if (input.channelCodes?.length && product) {
             await this.assignToChannels(ctx, product.id, input.channelCodes);
         }
@@ -114,16 +146,18 @@ export class ProductSyncService {
         }
 
         const allChannels = await this.channelService.findAll(ctx);
-        const channelList = allChannels.items;
-
         for (const code of channelCodes) {
-            const channel = channelList.find(c => c.code === code);
+            const channel = allChannels.items.find(c => c.code === code);
             if (channel) {
-                await this.productService.assignProductsToChannel(ctx, {
-                    channelId: channel.id,
-                    productIds: [productId],
-                });
-                Logger.info(`Assigned product ${productId} to channel ${code}`, 'ProductSync');
+                try {
+                    await this.productService.assignProductsToChannel(ctx, {
+                        channelId: channel.id,
+                        productIds: [productId],
+                    });
+                    Logger.info(`Assigned product ${productId} to channel ${code}`, 'ProductSync');
+                } catch (e: any) {
+                    Logger.warn(`Assign to ${code} failed: ${e.message}`, 'ProductSync');
+                }
             } else {
                 Logger.warn(`Channel ${code} not found`, 'ProductSync');
             }
@@ -136,12 +170,9 @@ export class ProductSyncService {
             Logger.warn(`Product ${erpProductId} not found`, 'ProductSync');
             return;
         }
-
         const allChannels = await this.channelService.findAll(ctx);
-        const channelList = allChannels.items;
-
         for (const code of channelCodes) {
-            const channel = channelList.find(c => c.code === code);
+            const channel = allChannels.items.find(c => c.code === code);
             if (channel) {
                 await this.productService.removeProductsFromChannel(ctx, {
                     channelId: channel.id,
@@ -161,11 +192,11 @@ export class ProductSyncService {
     }
 
     private async findByErpId(ctx: RequestContext, erpProductId: string): Promise<Product | undefined> {
-        const result = await this.productService.findOneBySlug(ctx, `erp-${erpProductId}`);
+        const slug = `erp-${erpProductId}`;
+        const result = await this.productService.findOneBySlug(ctx, slug);
         if (result) return result as unknown as Product;
-
         const { items } = await this.productService.findAll(ctx, {
-            filter: { slug: { eq: `erp-${erpProductId}` } },
+            filter: { slug: { eq: slug } },
             take: 1,
         });
         return items[0] as unknown as Product | undefined;

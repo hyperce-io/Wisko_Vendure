@@ -343,12 +343,19 @@ export class TenantService {
     // ========================================================================
 
     async syncAdmin(ctx: RequestContext, input: SyncAdminInput) {
-        // Check if exists
+        // Check if exists — update if found, create if not
         const { items } = await this.administratorService.findAll(ctx, {
             filter: { emailAddress: { eq: input.email } },
         });
         if (items.length > 0) {
-            Logger.info(`Admin ${input.email} already exists, skipping`, 'TenantService');
+            // Update existing admin (password, name, etc.)
+            const existing = items[0];
+            const updateInput: any = { id: existing.id };
+            if (input.firstName) updateInput.firstName = input.firstName;
+            if (input.lastName) updateInput.lastName = input.lastName;
+            if (input.password) updateInput.password = input.password;
+            await this.administratorService.update(ctx, updateInput);
+            Logger.info(`Updated admin ${input.email}`, 'TenantService');
             return;
         }
 
