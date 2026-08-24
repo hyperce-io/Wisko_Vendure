@@ -1,34 +1,59 @@
-# Wisko Vendure — ERP Integration JSON Contracts
+# Wisko Vendure — RabbitMQ Sync Contract
 
-## Hierarchy
+## Connection
 
 ```
-Company (Nike)                    ← the brand / organization
-  └── Tenant (Nike India Pvt Ltd) ← legal entity / regional business unit
-       └── Channel (Mumbai Store) ← actual store that sells products
+Host:     4.240.93.82
+Port:     5672
+User:     admin
+Password: admin
 ```
 
-**Rules:**
-- No Tenant without a Company
-- No Channel without a Tenant
-- `company.code`, `tenant.code`, `channel.erpChannelId` are idempotency keys
-- Re-sending same codes = update, never duplicate
+## Exchange & Queue
+
+```
+Exchange:  wisko.sync          (type: topic, durable)
+Queue:     wisko.sync.vendure  (durable, DLQ-enabled)
+DLQ:       wisko.sync.vendure.dlq
+```
+
+## Routing Keys
+
+| Routing Key | Description |
+|---|---|
+| `company.created` | Create a new company |
+| `company.updated` | Update company name/enabled |
+| `company.deleted` | Suspend (disable) a company |
+| `tenant.created` | Create a new tenant under a company |
+| `tenant.updated` | Update tenant name/enabled |
+| `tenant.deleted` | Suspend (disable) a tenant |
+| `channel.created` | Create a new channel (store) under a tenant |
+| `channel.updated` | Update channel details |
+| `channel.deleted` | Delete a channel |
+| `admin.created` | Create a new admin user |
+| `admin.updated` | Update admin role/access |
+| `admin.deactivated` | Deactivate an admin |
+| `product.created` | Create a product with variants |
+| `product.updated` | Update product + variants |
+| `product.deleted` | Soft-delete a product |
+| `product.assigned` | Assign a product to channel(s) |
+| `product.removed` | Remove a product from channel(s) |
+| `sync.full` | Full org sync (company + tenants + channels + products in one call) |
 
 ---
 
-## CREATE
+## Organization Payloads
 
-### Create a Company
+### company.created
 
 ```json
 {
   "company": {
     "code": "nike",
     "name": "Nike",
-    "enabled": true,
     "admin": {
       "email": "boss@nike.com",
-      "password": "securepass123",
+      "password": "securepass",
       "firstName": "Nike",
       "lastName": "Admin"
     }
@@ -36,216 +61,110 @@ Company (Nike)                    ← the brand / organization
 }
 ```
 
-### Create a Company + Tenant
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india",
-    "name": "Nike India Pvt Ltd",
-    "admin": {
-      "email": "admin@nike-india.com",
-      "password": "securepass123",
-      "firstName": "Nike India",
-      "lastName": "Admin"
-    }
-  }
-}
-```
-
-### Create a Company + Tenant + Channel
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
-  "channel": {
-    "erpChannelId": "ERP-NI-001",
-    "code": "nike-india-mumbai",
-    "name": "Nike India Mumbai Store",
-    "defaultCurrencyCode": "INR",
-    "defaultLanguageCode": "en",
-    "pricesIncludeTax": true
-  }
-}
-```
-
-### Create everything at once
+### company.updated
 
 ```json
 {
   "company": {
     "code": "nike",
-    "name": "Nike",
-    "enabled": true,
-    "admin": {
-      "email": "boss@nike.com",
-      "password": "securepass123",
-      "firstName": "Nike",
-      "lastName": "Admin"
-    }
-  },
+    "name": "Nike Inc.",
+    "enabled": true
+  }
+}
+```
+
+### company.deleted (suspend)
+
+```json
+{
+  "company": {
+    "code": "nike"
+  }
+}
+```
+
+### tenant.created
+
+```json
+{
+  "company": { "code": "nike" },
   "tenant": {
     "code": "nike-india",
     "name": "Nike India Pvt Ltd",
     "admin": {
       "email": "admin@nike-india.com",
-      "password": "securepass123",
-      "firstName": "Nike India",
+      "password": "securepass",
+      "firstName": "India",
       "lastName": "Admin"
     }
-  },
+  }
+}
+```
+
+### tenant.updated
+
+```json
+{
+  "company": { "code": "nike" },
+  "tenant": {
+    "code": "nike-india",
+    "name": "Nike India Private Limited",
+    "enabled": false
+  }
+}
+```
+
+### channel.created
+
+```json
+{
+  "company": { "code": "nike" },
+  "tenant": { "code": "nike-india" },
   "channel": {
     "erpChannelId": "ERP-NI-001",
     "code": "nike-india-mumbai",
-    "name": "Nike India Mumbai Store",
+    "name": "Mumbai Store",
     "defaultCurrencyCode": "INR",
     "defaultLanguageCode": "en",
-    "pricesIncludeTax": true
+    "pricesIncludeTax": false
   }
 }
 ```
 
-### Bulk — multiple channels
+### channel.updated (idempotent — same erpChannelId = update)
 
 ```json
 {
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
-  "channels": [
-    {
-      "erpChannelId": "ERP-NI-001",
-      "code": "nike-india-mumbai",
-      "name": "Mumbai Store",
-      "defaultCurrencyCode": "INR",
-      "defaultLanguageCode": "en",
-      "pricesIncludeTax": true
-    },
-    {
-      "erpChannelId": "ERP-NI-002",
-      "code": "nike-india-delhi",
-      "name": "Delhi Store",
-      "defaultCurrencyCode": "INR",
-      "defaultLanguageCode": "en",
-      "pricesIncludeTax": true
-    }
-  ]
-}
-```
-
-### Bulk — full org with multiple tenants and channels
-
-```json
-{
-  "company": {
-    "code": "adidas",
-    "name": "Adidas AG",
-    "enabled": true,
-    "admin": {
-      "email": "global@adidas.com",
-      "password": "securepass123",
-      "firstName": "Adidas",
-      "lastName": "Global Admin"
-    }
-  },
-  "tenants": [
-    {
-      "code": "adidas-eu",
-      "name": "Adidas Europe GmbH",
-      "admin": {
-        "email": "admin@adidas-eu.com",
-        "password": "securepass123",
-        "firstName": "Adidas EU",
-        "lastName": "Admin"
-      },
-      "channels": [
-        {
-          "erpChannelId": "ERP-AEU-001",
-          "code": "adidas-eu-berlin",
-          "name": "Berlin Store",
-          "defaultCurrencyCode": "EUR",
-          "defaultLanguageCode": "de",
-          "pricesIncludeTax": true
-        },
-        {
-          "erpChannelId": "ERP-AEU-002",
-          "code": "adidas-eu-paris",
-          "name": "Paris Store",
-          "defaultCurrencyCode": "EUR",
-          "defaultLanguageCode": "fr",
-          "pricesIncludeTax": true
-        }
-      ]
-    },
-    {
-      "code": "adidas-us",
-      "name": "Adidas America Inc",
-      "admin": {
-        "email": "admin@adidas-us.com",
-        "password": "securepass123",
-        "firstName": "Adidas US",
-        "lastName": "Admin"
-      },
-      "channels": [
-        {
-          "erpChannelId": "ERP-AUS-001",
-          "code": "adidas-us-nyc",
-          "name": "New York Store",
-          "defaultCurrencyCode": "USD",
-          "defaultLanguageCode": "en",
-          "pricesIncludeTax": false
-        }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## ADD ADMIN
-
-### Add a company-level admin
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "admin": {
-    "email": "regional-head@nike.com",
-    "password": "securepass123",
-    "firstName": "Sarah",
-    "lastName": "Johnson",
-    "role": "company-admin"
+  "company": { "code": "nike" },
+  "tenant": { "code": "nike-india" },
+  "channel": {
+    "erpChannelId": "ERP-NI-001",
+    "code": "nike-india-mumbai",
+    "name": "Mumbai Flagship Store",
+    "defaultCurrencyCode": "INR"
   }
 }
 ```
 
-### Add a tenant-level admin
+### channel.deleted
 
 ```json
 {
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
+  "channel": {
+    "erpChannelId": "ERP-NI-001"
+  }
+}
+```
+
+### admin.created (tenant admin)
+
+```json
+{
+  "company": { "code": "nike" },
+  "tenant": { "code": "nike-india" },
   "admin": {
     "email": "manager@nike-india.com",
-    "password": "securepass123",
+    "password": "securepass",
     "firstName": "Ravi",
     "lastName": "Kumar",
     "role": "tenant-admin"
@@ -253,19 +172,30 @@ Company (Nike)                    ← the brand / organization
 }
 ```
 
-### Add a store-level staff member
+### admin.created (company admin)
 
 ```json
 {
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
+  "company": { "code": "nike" },
   "admin": {
-    "email": "staff@mumbai-store.com",
-    "password": "securepass123",
+    "email": "regional@nike.com",
+    "password": "securepass",
+    "firstName": "Sarah",
+    "lastName": "Johnson",
+    "role": "company-admin"
+  }
+}
+```
+
+### admin.created (store staff — single channel)
+
+```json
+{
+  "company": { "code": "nike" },
+  "tenant": { "code": "nike-india" },
+  "admin": {
+    "email": "staff@mumbai.com",
+    "password": "securepass",
     "firstName": "Amit",
     "lastName": "Patel",
     "role": "store-staff",
@@ -274,155 +204,145 @@ Company (Nike)                    ← the brand / organization
 }
 ```
 
+### admin.deactivated
+
+```json
+{
+  "admin": {
+    "email": "staff@mumbai.com"
+  }
+}
+```
+
 ---
 
-## UPDATE
+## Product Payloads
 
-### Update a Company
+### product.created
 
-```json
-{
-  "company": {
-    "code": "nike",
-    "name": "Nike Inc."
-  }
-}
-```
-
-### Update a Tenant
+Create a product with variants. Optionally assign to channels immediately.
 
 ```json
 {
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india",
-    "name": "Nike India Private Limited"
-  }
-}
-```
-
-### Update a Channel
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
-  "channel": {
-    "erpChannelId": "ERP-NI-001",
-    "name": "Nike Mumbai Flagship",
-    "defaultCurrencyCode": "INR"
-  }
-}
-```
-
-### Update admin role / channel access
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "admin": {
-    "email": "staff@mumbai-store.com",
-    "action": "update",
-    "role": "store-staff",
+  "product": {
+    "erpProductId": "PROD-001",
+    "name": "Air Max 90",
+    "slug": "erp-PROD-001",
+    "description": "Classic Nike Air Max 90 sneakers",
+    "enabled": true,
+    "variants": [
+      {
+        "sku": "AM90-BLK-10",
+        "name": "Air Max 90 Black Size 10",
+        "price": 12999,
+        "stockOnHand": 100,
+        "trackInventory": true,
+        "enabled": true
+      },
+      {
+        "sku": "AM90-WHT-10",
+        "name": "Air Max 90 White Size 10",
+        "price": 12999,
+        "stockOnHand": 50
+      }
+    ],
     "channelCodes": ["nike-india-mumbai", "nike-india-delhi"]
   }
 }
 ```
 
+### product.updated
+
+Update product details + variant prices/stock. Matched by `erpProductId`. Variants matched by `sku`.
+
+```json
+{
+  "product": {
+    "erpProductId": "PROD-001",
+    "name": "Air Max 90 (2026 Edition)",
+    "description": "Updated description",
+    "variants": [
+      {
+        "sku": "AM90-BLK-10",
+        "name": "Air Max 90 Black Size 10",
+        "price": 11999,
+        "stockOnHand": 200
+      }
+    ]
+  }
+}
+```
+
+### product.deleted (soft delete)
+
+```json
+{
+  "product": {
+    "erpProductId": "PROD-001"
+  }
+}
+```
+
+### product.assigned
+
+Assign an existing product to additional channels.
+
+```json
+{
+  "product": {
+    "erpProductId": "PROD-001",
+    "channelCodes": ["nike-india-delhi", "nike-uk-london"]
+  }
+}
+```
+
+### product.removed
+
+Remove a product from specific channels.
+
+```json
+{
+  "product": {
+    "erpProductId": "PROD-001",
+    "channelCodes": ["nike-india-delhi"]
+  }
+}
+```
+
 ---
 
-## SUSPEND / REACTIVATE
+## Full Sync
 
-### Suspend a Company (all admins under it lose access)
-
-```json
-{
-  "company": {
-    "code": "nike",
-    "enabled": false
-  }
-}
-```
-
-### Reactivate a Company
+Everything in one message — company + tenants + channels + products.
 
 ```json
 {
   "company": {
-    "code": "nike",
-    "enabled": true
-  }
-}
-```
-
-### Suspend a Tenant (company admin still works)
-
-```json
-{
-  "company": {
-    "code": "nike"
+    "code": "adidas",
+    "name": "Adidas AG",
+    "admin": { "email": "global@adidas.com", "password": "securepass" }
   },
-  "tenant": {
-    "code": "nike-india",
-    "enabled": false
-  }
-}
-```
-
----
-
-## DELETE / DEACTIVATE
-
-### Deactivate an admin
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "admin": {
-    "email": "old-admin@nike-india.com",
-    "action": "deactivate"
-  }
-}
-```
-
-### Delete a Channel
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india"
-  },
-  "channel": {
-    "erpChannelId": "ERP-NI-002",
-    "action": "delete"
-  }
-}
-```
-
-### Delete a Tenant (and all its channels)
-
-```json
-{
-  "company": {
-    "code": "nike"
-  },
-  "tenant": {
-    "code": "nike-india",
-    "action": "delete"
-  }
+  "tenants": [
+    {
+      "code": "adidas-eu",
+      "name": "Adidas Europe",
+      "admin": { "email": "eu@adidas.com", "password": "securepass" },
+      "channels": [
+        { "erpChannelId": "ERP-AEU-001", "code": "adidas-berlin", "defaultCurrencyCode": "EUR" },
+        { "erpChannelId": "ERP-AEU-002", "code": "adidas-paris", "defaultCurrencyCode": "EUR" }
+      ]
+    }
+  ],
+  "products": [
+    {
+      "erpProductId": "ADI-001",
+      "name": "Ultraboost 23",
+      "variants": [
+        { "sku": "UB23-BLK-10", "name": "Ultraboost Black 10", "price": 18999 }
+      ],
+      "channelCodes": ["adidas-berlin", "adidas-paris"]
+    }
+  ]
 }
 ```
 
@@ -434,44 +354,77 @@ Company (Nike)                    ← the brand / organization
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `code` | string | Always | Unique identifier, lowercase, no spaces |
+| `code` | string | Always | Unique, lowercase, no spaces |
 | `name` | string | On create | Display name |
-| `enabled` | boolean | No | Default `true`. Set `false` to suspend |
-| `admin` | object | On create | Ignored if company already exists |
+| `enabled` | boolean | No | Default true. false = suspend |
+| `admin` | object | On create | Ignored if company exists |
 
 ### Tenant
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `code` | string | Always | Unique within the company |
+| `code` | string | Always | Unique within company |
 | `name` | string | On create | Display name |
-| `enabled` | boolean | No | Default `true`. Set `false` to suspend |
-| `action` | string | No | `"delete"` to remove tenant + all channels |
-| `admin` | object | On create | Ignored if tenant already exists |
+| `enabled` | boolean | No | Default true. false = suspend |
+| `admin` | object | On create | Ignored if tenant exists |
 
 ### Channel
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `erpChannelId` | string | Always | Unique external ID — the idempotency key |
-| `code` | string | On create | Unique channel code in Vendure |
-| `name` | string | On create | Display name |
-| `defaultCurrencyCode` | string | No | ISO 4217 (INR, USD, EUR, GBP, JPY). Default: USD |
-| `defaultLanguageCode` | string | No | ISO 639-1 (en, de, fr, ja, hi). Default: en |
+| `erpChannelId` | string | Always | Idempotency key — re-send = update |
+| `code` | string | On create | Vendure channel code |
+| `name` | string | No | Display name |
+| `defaultCurrencyCode` | string | No | ISO 4217. Default: USD |
+| `defaultLanguageCode` | string | No | ISO 639-1. Default: en |
 | `pricesIncludeTax` | boolean | No | Default: false |
-| `action` | string | No | `"delete"` to remove channel |
 
 ### Admin
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `email` | string | Always | Unique identifier |
-| `password` | string | On create | Not needed for deactivate/update |
+| `password` | string | On create | |
 | `firstName` | string | On create | |
 | `lastName` | string | On create | |
-| `role` | string | No | `"company-admin"`, `"tenant-admin"` (default), `"store-staff"` |
-| `channelCodes` | string[] | For store-staff | Which stores this admin can access |
-| `action` | string | No | `"create"` (default), `"deactivate"`, `"update"` |
+| `role` | string | No | `company-admin`, `tenant-admin` (default), `store-staff` |
+| `channelCodes` | string[] | For store-staff | Which channels staff can access |
+
+### Product
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `erpProductId` | string | Always | Idempotency key — stored as slug `erp-{id}` |
+| `name` | string | On create/update | Product name |
+| `slug` | string | No | Auto-generated as `erp-{erpProductId}` if omitted |
+| `description` | string | No | Product description |
+| `enabled` | boolean | No | Default: true |
+| `variants` | array | On create | At least one variant required |
+| `channelCodes` | string[] | No | Assign to these channels on create |
+
+### Product Variant
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `sku` | string | Always | Unique — used for idempotent upsert |
+| `name` | string | Always | Variant display name |
+| `price` | number | Always | Price in minor units (cents/paise) |
+| `stockOnHand` | number | No | Default: 0 |
+| `trackInventory` | boolean | No | Default: false |
+| `enabled` | boolean | No | Default: true |
+
+---
+
+## Idempotency
+
+| Entity | Key | Re-send behavior |
+|---|---|---|
+| Company | `code` | Found → update, not duplicate |
+| Tenant | `code` | Found → update, not duplicate |
+| Channel | `erpChannelId` | Found → update, not duplicate |
+| Admin | `email` | Found → skip |
+| Product | `erpProductId` (slug) | Found → update, not duplicate |
+| Variant | `sku` | Found → update, not duplicate |
 
 ---
 
@@ -479,50 +432,19 @@ Company (Nike)                    ← the brand / organization
 
 | Rule | Error |
 |---|---|
-| `tenant` without `company` | `"company.code is required"` |
-| `channel` without `tenant` | `"tenant.code is required"` |
-| `channel` without `company` | `"company.code is required"` |
-| Duplicate codes on create | Uses existing (idempotent, not an error) |
-| Duplicate `erpChannelId` | Updates existing channel (idempotent) |
-| `admin.email` already exists | `"Administrator already exists"` |
+| `tenant` without `company.code` | `company.code is required` |
+| `channel` without `tenant.code` | `tenant.code is required` |
+| `channel` without `company.code` | `company.code is required` |
+| `product.created` without `erpProductId` | `product.erpProductId is required` |
+| `product.created` without `name` | `product.name is required` |
+| `product.assigned` without `channelCodes` | `product.channelCodes is required` |
+| Unknown routing key | Logged as warning, message nack'd to DLQ |
 
 ---
 
-## Response
+## Error Handling
 
-### Success
-
-```json
-{
-  "success": true,
-  "company": { "id": "1", "code": "nike", "isNew": false },
-  "tenant": { "id": "2", "code": "nike-india", "isNew": true },
-  "channels": [
-    { "id": "5", "code": "nike-india-mumbai", "erpChannelId": "ERP-NI-001", "isNew": true }
-  ],
-  "admins": [
-    { "email": "admin@nike-india.com", "isNew": true }
-  ]
-}
-```
-
-### Error
-
-```json
-{
-  "success": false,
-  "error": "company.code is required when providing a tenant"
-}
-```
-
----
-
-## Visibility After Sync
-
-| Login | Sees | Level |
-|---|---|---|
-| `boss@nike.com` | mumbai, delhi, london | Company admin (all Nike) |
-| `admin@nike-india.com` | mumbai, delhi | Tenant admin (India only) |
-| `admin@nike-uk.com` | london | Tenant admin (UK only) |
-| `staff@mumbai-store.com` | mumbai | Store staff (one store) |
-| `superadmin` | everything | SuperAdmin |
+- **Success** → message ack'd, removed from queue
+- **Validation error** → message nack'd, sent to DLQ (`wisko.sync.vendure.dlq`)
+- **Processing error** → message nack'd, sent to DLQ
+- **DLQ messages** can be inspected via RabbitMQ Management UI at `http://4.240.93.82:15672` (admin/admin)
