@@ -2,6 +2,7 @@ import { PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendur
 import { Tenant } from './entities/tenant.entity';
 import { Company } from './entities/company.entity';
 import { TenantService } from './services/tenant.service';
+import { ProductSyncService } from './services/product-sync.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { TenantBoundaryGuard } from './guards/tenant-boundary.guard';
 import { TenantAdminResolver } from './api/tenant-admin.resolver';
@@ -16,6 +17,7 @@ import './types';
     compatibility: '^3.0.0',
     providers: [
         TenantService,
+        ProductSyncService,
         TenantChannelHandler,
         TenantBoundaryGuard,
         RabbitMQConsumer,
