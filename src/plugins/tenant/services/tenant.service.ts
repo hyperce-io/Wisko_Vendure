@@ -288,14 +288,20 @@ export class TenantService {
         const channelCode = input.code || `${input.tenantCode}-${Date.now().toString(36)}`;
         const token = `${channelCode}-${Date.now().toString(36)}`;
 
+        // Copy default tax/shipping zones from the default channel
+        const defaultChannel = await this.channelService.getDefaultChannel(ctx);
+        const defaultChannelFull = await this.connection.rawConnection
+            .getRepository(Channel)
+            .findOne({ where: { id: defaultChannel.id }, relations: { defaultTaxZone: true, defaultShippingZone: true } });
+
         const result = await this.channelService.create(ctx, {
             code: channelCode,
             token,
             defaultLanguageCode: (input.defaultLanguageCode || 'en') as LanguageCode,
             defaultCurrencyCode: (input.defaultCurrencyCode || 'USD') as CurrencyCode,
             pricesIncludeTax: input.pricesIncludeTax || false,
-            defaultShippingZoneId: undefined!,
-            defaultTaxZoneId: undefined!,
+            defaultShippingZoneId: defaultChannelFull?.defaultShippingZone?.id ?? undefined!,
+            defaultTaxZoneId: defaultChannelFull?.defaultTaxZone?.id ?? undefined!,
             // customFields is typed as JSON in CreateChannelInput
             customFields: { tenant, erpChannelId: input.erpChannelId } as any,
         });
@@ -529,14 +535,20 @@ export class TenantService {
 
         const channelCode = input.channelCode || input.code;
         const token = `${channelCode}-${Date.now().toString(36)}`;
+
+        const defChannel = await this.channelService.getDefaultChannel(ctx);
+        const defChannelFull = await this.connection.rawConnection
+            .getRepository(Channel)
+            .findOne({ where: { id: defChannel.id }, relations: { defaultTaxZone: true, defaultShippingZone: true } });
+
         const newChannel = await this.channelService.create(ctx, {
             code: channelCode,
             token,
             defaultLanguageCode: (input.defaultLanguageCode || LanguageCode.en) as LanguageCode,
             defaultCurrencyCode: (input.defaultCurrencyCode || CurrencyCode.USD) as CurrencyCode,
             pricesIncludeTax: false,
-            defaultShippingZoneId: undefined!,
-            defaultTaxZoneId: undefined!,
+            defaultShippingZoneId: defChannelFull?.defaultShippingZone?.id ?? undefined!,
+            defaultTaxZoneId: defChannelFull?.defaultTaxZone?.id ?? undefined!,
             // customFields is typed as JSON in CreateChannelInput
             customFields: { tenant } as any,
         });
