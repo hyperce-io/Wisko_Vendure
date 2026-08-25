@@ -9,19 +9,22 @@ import {
 } from './rabbitmq.constants';
 import { RabbitMQMessageHandler } from './rabbitmq.handler';
 
+const RECONNECT_DELAY_MS = 5000;
+const MAX_RECONNECT_ATTEMPTS = 0; // 0 = infinite
+
 @Injectable()
 export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationShutdown {
     private connection: amqp.ChannelModel | null = null;
     private channel: amqp.Channel | null = null;
     private started = false;
+    private shuttingDown = false;
+    private reconnectAttempts = 0;
 
     constructor(
         private processContext: ProcessContext,
         private messageHandler: RabbitMQMessageHandler,
     ) {}
 
-    // Auto-called by NestJS — we skip here since worker doesn't trigger it for plugin providers.
-    // Instead, index-worker.ts calls startConsuming() manually.
     async onApplicationBootstrap() {
         // no-op — consumer is started manually from index-worker.ts
     }
@@ -29,12 +32,41 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
     async startConsuming() {
         if (this.started) return;
         this.started = true;
+        await this.connect();
+    }
 
+    private async connect() {
         const url = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
 
         try {
-            this.connection = await amqp.connect(url);
+            // Connect with heartbeat (30s) to keep connection alive
+            const connectUrl = url.includes('?') ? `${url}&heartbeat=30` : `${url}?heartbeat=30`;
+            this.connection = await amqp.connect(connectUrl);
+
+            // Handle connection errors + close → reconnect
+            this.connection.on('error', (err) => {
+                Logger.error(`Connection error: ${err.message}`, 'RabbitMQ');
+            });
+            this.connection.on('close', () => {
+                if (!this.shuttingDown) {
+                    Logger.warn('Connection closed. Reconnecting...', 'RabbitMQ');
+                    this.scheduleReconnect();
+                }
+            });
+
             this.channel = await this.connection.createChannel();
+
+            // Handle channel errors + close → reconnect
+            this.channel.on('error', (err) => {
+                Logger.error(`Channel error: ${err.message}`, 'RabbitMQ');
+            });
+            this.channel.on('close', () => {
+                if (!this.shuttingDown) {
+                    Logger.warn('Channel closed. Reconnecting...', 'RabbitMQ');
+                    this.scheduleReconnect();
+                }
+            });
+
             const ch = this.channel;
 
             // Dead letter exchange + queue
@@ -61,6 +93,7 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
 
             await ch.prefetch(1);
 
+            // Consume
             await ch.consume(RABBITMQ_QUEUE, async (msg) => {
                 if (!msg) return;
                 const routingKey = msg.fields.routingKey;
@@ -78,13 +111,36 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
                 }
             });
 
-            Logger.info(`Connected — consuming "${RABBITMQ_QUEUE}" (exchange: "${RABBITMQ_EXCHANGE}")`, 'RabbitMQ');
+            this.reconnectAttempts = 0;
+            Logger.info(`Connected — consuming "${RABBITMQ_QUEUE}" (heartbeat: 30s)`, 'RabbitMQ');
         } catch (error: any) {
-            Logger.warn(`RabbitMQ not available: ${error.message}`, 'RabbitMQ');
+            Logger.warn(`Connection failed: ${error.message}`, 'RabbitMQ');
+            this.scheduleReconnect();
         }
     }
 
+    private scheduleReconnect() {
+        if (this.shuttingDown) return;
+        if (MAX_RECONNECT_ATTEMPTS > 0 && this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            Logger.error(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`, 'RabbitMQ');
+            return;
+        }
+
+        this.reconnectAttempts++;
+        const delay = Math.min(RECONNECT_DELAY_MS * this.reconnectAttempts, 30000); // max 30s backoff
+        Logger.info(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})...`, 'RabbitMQ');
+
+        // Clean up old connection
+        try { this.channel?.removeAllListeners(); } catch (_) {}
+        try { this.connection?.removeAllListeners(); } catch (_) {}
+        this.channel = null;
+        this.connection = null;
+
+        setTimeout(() => this.connect(), delay);
+    }
+
     async onApplicationShutdown() {
+        this.shuttingDown = true;
         try {
             await this.channel?.close();
             await this.connection?.close();
