@@ -15,7 +15,7 @@ import { RabbitMQPublisher } from '../rabbitmq/rabbitmq.publisher';
 import { ROUTING_KEYS } from '../rabbitmq/rabbitmq.constants';
 
 const STATE_TO_ROUTING_KEY: Record<string, string> = {
-    ArrangingPayment: ROUTING_KEYS.ORDER_PLACED,
+    // ArrangingPayment skipped — no need to publish before payment
     PaymentAuthorized: ROUTING_KEYS.ORDER_PAYMENT_AUTHORIZED,
     PaymentSettled: ROUTING_KEYS.ORDER_PAYMENT_SETTLED,
     Shipped: ROUTING_KEYS.ORDER_SHIPPED,
