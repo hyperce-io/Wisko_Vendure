@@ -26,5 +26,12 @@ export const ROUTING_KEYS = {
     PRODUCT_ASSIGNED: 'product.assigned',
     PRODUCT_REMOVED: 'product.removed',
 
+    ORDER_PLACED: 'order.placed',
+    ORDER_PAYMENT_AUTHORIZED: 'order.payment_authorized',
+    ORDER_PAYMENT_SETTLED: 'order.payment_settled',
+    ORDER_SHIPPED: 'order.shipped',
+    ORDER_DELIVERED: 'order.delivered',
+    ORDER_CANCELLED: 'order.cancelled',
+
     SYNC_FULL: 'sync.full',
 } as const;
