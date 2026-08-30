@@ -66,6 +66,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                 'lines',
                 'lines.productVariant',
                 'lines.productVariant.product',
+                'lines.productVariant.product.translations',
                 'shippingLines',
                 'shippingLines.shippingMethod',
                 'payments',
@@ -125,28 +126,36 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                 billingAddress: this.serializeAddress(order.billingAddress),
 
                 // Lines
-                lines: (order.lines || []).map(line => ({
-                    id: String(line.id),
-                    quantity: line.quantity,
-                    linePrice: line.linePrice,
-                    linePriceWithTax: line.linePriceWithTax,
-                    discountedLinePrice: line.discountedLinePrice,
-                    discountedLinePriceWithTax: line.discountedLinePriceWithTax,
-                    unitPrice: line.unitPrice,
-                    unitPriceWithTax: line.unitPriceWithTax,
-                    taxRate: line.taxRate,
-                    productVariant: line.productVariant ? {
-                        id: String(line.productVariant.id),
-                        sku: line.productVariant.sku,
-                        name: line.productVariant.name,
-                        price: line.productVariant.price,
-                    } : null,
-                    product: line.productVariant?.product ? {
-                        id: String(line.productVariant.product.id),
-                        name: line.productVariant.product.name,
-                        slug: (line.productVariant.product as any).slug || null,
-                    } : null,
-                })),
+                lines: (order.lines || []).map(line => {
+                    const slug = (line.productVariant?.product as any)?.slug
+                        || (line.productVariant?.product as any)?.translations?.[0]?.slug
+                        || null;
+                    const erpProductId = slug?.startsWith('erp-') ? slug.slice(4) : null;
+
+                    return {
+                        id: String(line.id),
+                        quantity: line.quantity,
+                        linePrice: line.linePrice,
+                        linePriceWithTax: line.linePriceWithTax,
+                        discountedLinePrice: line.discountedLinePrice,
+                        discountedLinePriceWithTax: line.discountedLinePriceWithTax,
+                        unitPrice: line.unitPrice,
+                        unitPriceWithTax: line.unitPriceWithTax,
+                        taxRate: line.taxRate,
+                        productVariant: line.productVariant ? {
+                            id: String(line.productVariant.id),
+                            sku: line.productVariant.sku,
+                            name: line.productVariant.name,
+                            price: line.productVariant.price,
+                        } : null,
+                        product: line.productVariant?.product ? {
+                            id: String(line.productVariant.product.id),
+                            name: line.productVariant.product.name,
+                            slug,
+                            erpProductId,
+                        } : null,
+                    };
+                }),
 
                 // Shipping
                 shippingLines: (order.shippingLines || []).map(sl => ({
