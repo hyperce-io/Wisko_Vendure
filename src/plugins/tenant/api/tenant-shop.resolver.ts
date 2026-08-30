@@ -1,34 +1,30 @@
 import { Resolver, Query } from '@nestjs/graphql';
-import { Ctx, RequestContext, ChannelService, Logger } from '@vendure/core';
-import { TenantService } from '../services/tenant.service';
+import { Ctx, RequestContext, TransactionalConnection, Channel, Allow, Permission } from '@vendure/core';
 import '../types';
 
 @Resolver()
 export class TenantShopResolver {
     constructor(
-        private channelService: ChannelService,
-        private tenantService: TenantService,
+        private connection: TransactionalConnection,
     ) {}
 
     @Query()
+    @Allow(Permission.Public)
     async availableStores(@Ctx() ctx: RequestContext) {
-        // Get all channels that belong to a tenant (Level 3 — actual stores)
-        // Exclude the default channel and any channel without a tenant
-        const allChannels = await this.channelService.findAll(ctx);
+        // Query all channels that have a tenant assigned (Level 3 — actual stores)
+        // Uses raw connection to bypass channel-scoping (Shop API context is scoped to one channel)
+        const channels = await this.connection.rawConnection
+            .getRepository(Channel)
+            .createQueryBuilder('channel')
+            .where('channel.code != :default', { default: '__default_channel__' })
+            .andWhere('channel."customFieldsTenantid" IS NOT NULL')
+            .getMany();
 
-        const storeChannels = allChannels.items.filter(ch => {
-            // Skip default channel
-            if (ch.code === '__default_channel__') return false;
-            // Only include channels that have a tenant (i.e., actual stores)
-            if (!ch.customFields.tenant) return false;
-            return true;
-        });
-
-        return storeChannels.map(ch => ({
+        return channels.map(ch => ({
             id: String(ch.id),
             code: ch.code,
             token: ch.token,
-            name: ch.code, // Channel doesn't have a name field — use code
+            name: ch.code,
             currencyCode: ch.defaultCurrencyCode,
             languageCode: ch.defaultLanguageCode,
         }));
