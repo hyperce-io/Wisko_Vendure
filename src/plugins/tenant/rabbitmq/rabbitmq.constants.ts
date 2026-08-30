@@ -33,5 +33,11 @@ export const ROUTING_KEYS = {
     ORDER_DELIVERED: 'order.delivered',
     ORDER_CANCELLED: 'order.cancelled',
 
+    CUSTOMER_REGISTERED: 'customer.registered',
+    CUSTOMER_UPDATED: 'customer.updated',
+    CUSTOMER_DELETED: 'customer.deleted',
+    CUSTOMER_ADDRESS_CREATED: 'customer.address_created',
+    CUSTOMER_ADDRESS_UPDATED: 'customer.address_updated',
+
     SYNC_FULL: 'sync.full',
 } as const;

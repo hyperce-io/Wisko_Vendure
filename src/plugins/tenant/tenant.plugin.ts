@@ -5,6 +5,7 @@ import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { OrderEventPublisher } from './events/order-event.publisher';
+import { CustomerEventPublisher } from './events/customer-event.publisher';
 import { TenantBoundaryGuard } from './guards/tenant-boundary.guard';
 import { TenantAdminResolver } from './api/tenant-admin.resolver';
 import { TenantShopResolver } from './api/tenant-shop.resolver';
@@ -24,6 +25,7 @@ import './types';
         ProductSyncService,
         TenantChannelHandler,
         OrderEventPublisher,
+        CustomerEventPublisher,
         TenantBoundaryGuard,
         RabbitMQConsumer,
         RabbitMQPublisher,
