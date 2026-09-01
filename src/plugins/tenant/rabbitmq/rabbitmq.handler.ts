@@ -180,9 +180,12 @@ export class RabbitMQMessageHandler {
     // ---- Product ----
 
     private async handleProductSync(ctx: RequestContext, payload: any) {
-        const { product } = payload;
+        const { product, idempotency_key } = payload;
         if (!product?.erpProductId) throw new Error('product.erpProductId is required');
         if (!product?.name) throw new Error('product.name is required');
+        if (idempotency_key) {
+            Logger.info(`Product sync idempotency_key: ${idempotency_key}`, 'RabbitMQHandler');
+        }
         const input: SyncProductInput = {
             erpProductId: product.erpProductId,
             name: product.name,

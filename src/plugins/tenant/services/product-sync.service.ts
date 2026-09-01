@@ -48,7 +48,7 @@ export class ProductSyncService {
                         await this.productVariantService.create(ctx, [{
                             productId: product.id,
                             sku: v.sku,
-                            price: v.price,
+                            price: v.price ?? 0,
                             stockOnHand: v.stockOnHand ?? 0,
                             trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                             enabled: v.enabled !== false,
@@ -62,7 +62,7 @@ export class ProductSyncService {
                             await this.productVariantService.update(ctx, [{
                                 id: existing.id as ID,
                                 sku: v.sku,
-                                price: v.price,
+                                price: v.price ?? 0,
                                 stockOnHand: v.stockOnHand,
                                 trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                                 enabled: v.enabled,
@@ -97,7 +97,7 @@ export class ProductSyncService {
                         await this.productVariantService.update(ctx, [{
                             id: existing.id as ID,
                             sku: v.sku,
-                            price: v.price,
+                            price: v.price ?? 0,
                             stockOnHand: v.stockOnHand,
                             trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                             enabled: v.enabled,
@@ -109,7 +109,7 @@ export class ProductSyncService {
                             await this.productVariantService.create(ctx, [{
                                 productId: product.id,
                                 sku: v.sku,
-                                price: v.price,
+                                price: v.price ?? 0,
                                 stockOnHand: v.stockOnHand ?? 0,
                                 trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                                 enabled: v.enabled !== false,
