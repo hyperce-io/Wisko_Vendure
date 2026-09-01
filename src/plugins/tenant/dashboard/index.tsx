@@ -40,6 +40,7 @@ const getCompaniesQuery = graphql(`
                         defaultCurrencyCode
                         defaultLanguageCode
                         pricesIncludeTax
+                        erpChannelId
                     }
                     administrators {
                         id
@@ -52,6 +53,7 @@ const getCompaniesQuery = graphql(`
                     id
                     code
                     defaultCurrencyCode
+                    erpChannelId
                 }
                 administrators {
                     id
@@ -261,6 +263,8 @@ function OrganizationsPage() {
                                                                     <thead>
                                                                         <tr className="border-b text-left">
                                                                             <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Channel</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Channel</th>
+                                                                            <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">ERP ID</th>
                                                                             <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Currency</th>
                                                                             <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Language</th>
                                                                             <th className="px-2 py-1.5 font-semibold text-muted-foreground uppercase text-[10px]">Tax incl.</th>
@@ -268,11 +272,14 @@ function OrganizationsPage() {
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
-                                                                        {tenant.channels?.map(ch => (
+                                                                         {tenant.channels?.map(ch => (
                                                                             <tr key={ch.id} className="border-b border-border/30">
                                                                                 <td className="px-2 py-1.5">
                                                                                     <Badge variant="outline" className="bg-amber-50 text-amber-800 text-[10px] mr-1">CH</Badge>
                                                                                     <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">{ch.code}</code>
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5">
+                                                                                    <code className="text-[10px] text-muted-foreground">{(ch as any).erpChannelId || '—'}</code>
                                                                                 </td>
                                                                                 <td className="px-2 py-1.5">
                                                                                     <Badge variant="outline" className="text-[10px]">{ch.defaultCurrencyCode}</Badge>
