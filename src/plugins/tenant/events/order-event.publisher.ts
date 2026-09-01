@@ -84,6 +84,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
         }
 
         const channel = order.channels?.find((c: Channel) => c.code !== '__default_channel__') || order.channels?.[0];
+        const erpChannelId = channel?.customFields?.erpChannelId || null;
 
         return {
             event: `order.${this.stateToEventName(toState)}`,
@@ -117,6 +118,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                     id: String(channel.id),
                     code: channel.code,
                     token: channel.token,
+                    erpChannelId,
                 } : null,
 
                 // Customer

@@ -115,6 +115,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
         });
 
         const channel = customer.channels?.find(c => c.code !== '__default_channel__') || customer.channels?.[0];
+        const erpChannelId = channel?.customFields?.erpChannelId || null;
 
         return {
             event: `customer.${type}`,
@@ -132,11 +133,11 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                 id: String(a.id),
                 fullName: a.fullName,
                 company: a.company || null,
-                streetLine1: a.streetLine1,
+                streetLine1: a.streetLine1 || null,
                 streetLine2: a.streetLine2 || null,
-                city: a.city,
+                city: a.city || null,
                 province: a.province || null,
-                postalCode: a.postalCode,
+                postalCode: a.postalCode || null,
                 phoneNumber: a.phoneNumber || null,
                 defaultShippingAddress: a.defaultShippingAddress,
                 defaultBillingAddress: a.defaultBillingAddress,
@@ -144,6 +145,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
             channel: channel ? {
                 id: String(channel.id),
                 code: channel.code,
+                erpChannelId,
             } : null,
         };
     }
