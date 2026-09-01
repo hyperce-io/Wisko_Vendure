@@ -54,7 +54,9 @@ import './types';
                 type: 'string',
                 unique: true,
                 nullable: true,
-                internal: true,
+                internal: false,
+                readonly: true,
+                label: [{ languageCode: 'en' as any, value: 'ERP Channel ID' }],
             },
         );
         config.customFields.Administrator.push({
