@@ -35,7 +35,7 @@ jobs:
           username: ${{ secrets.HYPERCE_SERVER_USER }}
           key: ${{ secrets.HYPERCE_SERVER_KEY }}
           port: ${{ secrets.HYPERCE_SERVER_PORT }}
-          source: 'dist'
+          source: 'dist,ecosystem.config.cjs'
           target: /home/${{ secrets.HYPERCE_SERVER_USER }}/wisko/backend/
           overwrite: true
           timeout: 120s
@@ -51,4 +51,19 @@ jobs:
           timeout: 120s
           command_timeout: 600s
           script: |
-            deploybackend --project wisko --branch development --pm bun --port 10020
+            export NVM_DIR="$HOME/.nvm"
+            source "$NVM_DIR/nvm.sh"
+            cd $HOME/wisko/backend
+            
+            # Install deps
+            bun install
+            
+            # Run migrations
+            bun run migration:run || true
+            
+            # Restart using ecosystem config (has 3GB memory limit)
+            pm2 delete wisko-backend || true
+            PORT=10020 pm2 start ecosystem.config.cjs
+            pm2 save --force
+            
+            echo "Deployed successfully"
