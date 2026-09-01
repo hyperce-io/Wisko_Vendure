@@ -38,16 +38,20 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
     onApplicationBootstrap() {
         if (!this.processContext.isServer) return;
 
-        this.eventBus.ofType(OrderStateTransitionEvent).subscribe(async (event) => {
+        this.eventBus.ofType(OrderStateTransitionEvent).subscribe((event) => {
             const routingKey = STATE_TO_ROUTING_KEY[event.toState];
             if (!routingKey) return;
 
-            try {
-                const payload = await this.buildOrderPayload(event.ctx, event.order, event.fromState, event.toState);
-                await this.publisher.publish(routingKey, payload);
-            } catch (error: any) {
-                Logger.error(`Failed to publish order event: ${error.message}`, 'OrderEventPublisher');
-            }
+            // Wrap in immediately-invoked async to catch ALL errors
+            (async () => {
+                try {
+                    const payload = await this.buildOrderPayload(event.ctx, event.order, event.fromState, event.toState);
+                    await this.publisher.publish(routingKey, payload);
+                } catch (error: any) {
+                    Logger.error(`Failed to publish order event: ${error.message}`, 'OrderEventPublisher');
+                    Logger.error(error.stack || '', 'OrderEventPublisher');
+                }
+            })();
         });
 
         Logger.info('Listening for order state transitions', 'OrderEventPublisher');
@@ -59,22 +63,25 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
         fromState: string,
         toState: string,
     ): Promise<Record<string, any>> {
-        // Hydrate relations we need
-        await this.entityHydrator.hydrate(ctx, order, {
-            relations: [
-                'customer',
-                'lines',
-                'lines.productVariant',
-                'lines.productVariant.product',
-                'lines.productVariant.product.translations',
-                'shippingLines',
-                'shippingLines.shippingMethod',
-                'payments',
-                'fulfillments',
-                'channels',
-                'surcharges',
-            ],
-        });
+        // Hydrate relations — wrap in try/catch as some may not exist
+        try {
+            await this.entityHydrator.hydrate(ctx, order, {
+                relations: [
+                    'customer',
+                    'lines',
+                    'lines.productVariant',
+                    'lines.productVariant.product',
+                    'lines.productVariant.product.translations',
+                    'shippingLines',
+                    'payments',
+                    'fulfillments',
+                    'channels',
+                    'surcharges',
+                ],
+            });
+        } catch (e: any) {
+            Logger.warn(`Hydration partial failure: ${e.message}`, 'OrderEventPublisher');
+        }
 
         const channel = order.channels?.find((c: Channel) => c.code !== '__default_channel__') || order.channels?.[0];
 

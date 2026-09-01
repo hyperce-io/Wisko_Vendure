@@ -26,66 +26,71 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
         if (!this.processContext.isServer) return;
 
         // Customer created/updated/deleted
-        this.eventBus.ofType(CustomerEvent).subscribe(async (event) => {
-            try {
-                const routingKey = this.getCustomerRoutingKey(event.type);
-                if (!routingKey) return;
-
-                const payload = await this.buildCustomerPayload(event.ctx, event.entity, event.type);
-                await this.publisher.publish(routingKey, payload);
-            } catch (error: any) {
-                Logger.error(`Failed to publish customer event: ${error.message}`, 'CustomerEventPublisher');
-            }
+        this.eventBus.ofType(CustomerEvent).subscribe((event) => {
+            (async () => {
+                try {
+                    const routingKey = this.getCustomerRoutingKey(event.type);
+                    if (!routingKey) return;
+                    const payload = await this.buildCustomerPayload(event.ctx, event.entity, event.type);
+                    await this.publisher.publish(routingKey, payload);
+                } catch (error: any) {
+                    Logger.error(`Failed to publish customer event: ${error.message}`, 'CustomerEventPublisher');
+                }
+            })();
         });
 
         // Customer address created/updated
-        this.eventBus.ofType(CustomerAddressEvent).subscribe(async (event) => {
-            try {
-                const routingKey = event.type === 'created'
-                    ? ROUTING_KEYS.CUSTOMER_ADDRESS_CREATED
-                    : ROUTING_KEYS.CUSTOMER_ADDRESS_UPDATED;
+        this.eventBus.ofType(CustomerAddressEvent).subscribe((event) => {
+            (async () => {
+                try {
+                    const routingKey = event.type === 'created'
+                        ? ROUTING_KEYS.CUSTOMER_ADDRESS_CREATED
+                        : ROUTING_KEYS.CUSTOMER_ADDRESS_UPDATED;
 
-                const address = event.entity;
-                const payload = {
-                    event: `customer.address_${event.type}`,
-                    timestamp: new Date().toISOString(),
-                    address: {
-                        id: String(address.id),
-                        fullName: address.fullName,
-                        company: address.company || null,
-                        streetLine1: address.streetLine1,
-                        streetLine2: address.streetLine2 || null,
-                        city: address.city,
-                        province: address.province || null,
-                        postalCode: address.postalCode,
-                        phoneNumber: address.phoneNumber || null,
-                        defaultShippingAddress: address.defaultShippingAddress,
-                        defaultBillingAddress: address.defaultBillingAddress,
-                    },
-                    customerId: address.customer?.id ? String(address.customer.id) : null,
-                };
-                await this.publisher.publish(routingKey, payload);
-            } catch (error: any) {
-                Logger.error(`Failed to publish address event: ${error.message}`, 'CustomerEventPublisher');
-            }
+                    const address = event.entity;
+                    const payload = {
+                        event: `customer.address_${event.type}`,
+                        timestamp: new Date().toISOString(),
+                        address: {
+                            id: String(address.id),
+                            fullName: address.fullName || null,
+                            company: address.company || null,
+                            streetLine1: address.streetLine1 || null,
+                            streetLine2: address.streetLine2 || null,
+                            city: address.city || null,
+                            province: address.province || null,
+                            postalCode: address.postalCode || null,
+                            phoneNumber: address.phoneNumber || null,
+                            defaultShippingAddress: address.defaultShippingAddress,
+                            defaultBillingAddress: address.defaultBillingAddress,
+                        },
+                        customerId: address.customer?.id ? String(address.customer.id) : null,
+                    };
+                    await this.publisher.publish(routingKey, payload);
+                } catch (error: any) {
+                    Logger.error(`Failed to publish address event: ${error.message}`, 'CustomerEventPublisher');
+                }
+            })();
         });
 
         // Account registration
-        this.eventBus.ofType(AccountRegistrationEvent).subscribe(async (event) => {
-            try {
-                const payload = {
-                    event: 'customer.registered',
-                    timestamp: new Date().toISOString(),
-                    user: {
-                        id: String(event.user.id),
-                        identifier: event.user.identifier,
-                    },
-                    channelCode: event.ctx.channel?.code || null,
-                };
-                await this.publisher.publish(ROUTING_KEYS.CUSTOMER_REGISTERED, payload);
-            } catch (error: any) {
-                Logger.error(`Failed to publish registration event: ${error.message}`, 'CustomerEventPublisher');
-            }
+        this.eventBus.ofType(AccountRegistrationEvent).subscribe((event) => {
+            (async () => {
+                try {
+                    const payload = {
+                        event: 'customer.registered',
+                        timestamp: new Date().toISOString(),
+                        user: {
+                            id: String(event.user.id),
+                            identifier: event.user.identifier,
+                        },
+                        channelCode: event.ctx.channel?.code || null,
+                    };
+                    await this.publisher.publish(ROUTING_KEYS.CUSTOMER_REGISTERED, payload);
+                } catch (error: any) {
+                    Logger.error(`Failed to publish registration event: ${error.message}`, 'CustomerEventPublisher');
+                }
+            })();
         });
 
         Logger.info('Listening for customer events', 'CustomerEventPublisher');
