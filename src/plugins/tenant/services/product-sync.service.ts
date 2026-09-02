@@ -200,37 +200,50 @@ export class ProductSyncService {
                 Logger.warn(`Stock update: variant ${item.sku} not found`, 'ProductSync');
                 continue;
             }
-
-            // Update stock at all channel stock locations for this variant
             await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty);
         }
     }
 
     /**
-     * Updates stock at all stock locations linked to the variant's channels.
-     * Each channel has one stock location. We find all stock levels for the variant
-     * and update each one to the target quantity.
+     * Updates stock only at stock locations linked to the variant's assigned channels.
+     * Each channel has one stock location — we only update locations for channels
+     * where the product is actually assigned.
      */
     private async updateStockForVariantChannels(ctx: RequestContext, variantId: ID, targetQty: number): Promise<void> {
-        const stockLevels = await this.stockLevelService.getStockLevelsForVariant(ctx, variantId);
+        // Get the product's assigned channels
+        const variant = await this.productVariantService.findOne(ctx, variantId, ['channels']);
+        if (!variant) return;
 
-        if (stockLevels.length === 0) {
-            // No stock levels exist yet — use variant update as fallback
+        const assignedChannelIds = new Set(
+            (variant.channels || []).map(c => String(c.id)),
+        );
+
+        // Get stock locations that belong to those channels
+        const stockLocationRows = await this.connection.rawConnection.query(
+            `SELECT DISTINCT sl.id as "stockLocationId"
+             FROM stock_location sl
+             JOIN stock_location_channels_channel slc ON slc."stockLocationId" = sl.id
+             WHERE slc."channelId" = ANY($1)`,
+            [Array.from(assignedChannelIds)],
+        );
+
+        if (stockLocationRows.length === 0) {
             await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
-            Logger.info(`Stock set (no locations): variant ${variantId} → ${targetQty}`, 'ProductSync');
+            Logger.info(`Stock set (no channel locations): variant ${variantId} → ${targetQty}`, 'ProductSync');
             return;
         }
 
-        for (const level of stockLevels) {
-            const currentQty = level.stockOnHand ?? 0;
+        for (const row of stockLocationRows) {
+            const level = await this.stockLevelService.getStockLevel(ctx, variantId, row.stockLocationId);
+            const currentQty = level?.stockOnHand ?? 0;
             const delta = targetQty - currentQty;
             if (delta !== 0) {
                 await this.stockLevelService.updateStockOnHandForLocation(
-                    ctx, variantId, level.stockLocationId, delta,
+                    ctx, variantId, row.stockLocationId, delta,
                 );
             }
         }
-        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${stockLevels.length} locations)`, 'ProductSync');
+        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${stockLocationRows.length} channel locations)`, 'ProductSync');
     }
 
     // ---- Helpers ----
