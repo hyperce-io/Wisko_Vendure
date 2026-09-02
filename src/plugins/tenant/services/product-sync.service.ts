@@ -191,6 +191,21 @@ export class ProductSyncService {
         }
     }
 
+    async updateStock(ctx: RequestContext, items: Array<{ sku: string; qty: number }>): Promise<void> {
+        for (const item of items) {
+            const variant = await this.findVariantBySku(ctx, item.sku);
+            if (variant) {
+                await this.productVariantService.update(ctx, [{
+                    id: variant.id as ID,
+                    stockOnHand: item.qty,
+                }]);
+                Logger.info(`Stock updated: ${item.sku} → ${item.qty}`, 'ProductSync');
+            } else {
+                Logger.warn(`Stock update: variant ${item.sku} not found`, 'ProductSync');
+            }
+        }
+    }
+
     private async findByErpId(ctx: RequestContext, erpProductId: string): Promise<Product | undefined> {
         const slug = `erp-${erpProductId}`;
         const result = await this.productService.findOneBySlug(ctx, slug);

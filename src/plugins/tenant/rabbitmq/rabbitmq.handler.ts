@@ -94,6 +94,11 @@ export class RabbitMQMessageHandler {
                 await this.handleProductRemove(ctx, payload);
                 break;
 
+            // Stock
+            case ROUTING_KEYS.STOCK_LEVEL_CHANGED:
+                await this.handleStockLevelChanged(ctx, payload);
+                break;
+
             // Full sync
             case ROUTING_KEYS.SYNC_FULL:
                 await this.handleFullSync(ctx, payload);
@@ -215,6 +220,36 @@ export class RabbitMQMessageHandler {
         if (!product?.erpProductId) throw new Error('product.erpProductId is required');
         if (!product?.channelCodes?.length) throw new Error('product.channelCodes is required');
         await this.productSyncService.removeFromChannels(ctx, product.erpProductId, product.channelCodes);
+    }
+
+    // ---- Stock ----
+
+    private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
+        // Accept multiple formats:
+        // { sku: "ABC", qty: 50 }
+        // { product: { variants: [{ sku: "ABC", stockOnHand: 50 }] } }
+        // { items: [{ sku: "ABC", qty: 50 }] }
+        const items: Array<{ sku: string; qty: number }> = [];
+
+        if (payload.sku && payload.qty !== undefined) {
+            items.push({ sku: payload.sku, qty: payload.qty });
+        } else if (payload.product?.variants) {
+            for (const v of payload.product.variants) {
+                if (v.sku) items.push({ sku: v.sku, qty: v.stockOnHand ?? v.qty ?? 0 });
+            }
+        } else if (payload.items) {
+            for (const item of payload.items) {
+                if (item.sku) items.push({ sku: item.sku, qty: item.qty ?? item.stockOnHand ?? 0 });
+            }
+        }
+
+        if (items.length === 0) {
+            Logger.warn('stock.level_changed: no valid items found in payload', 'RabbitMQHandler');
+            Logger.warn(`Payload: ${JSON.stringify(payload).substring(0, 500)}`, 'RabbitMQHandler');
+            return;
+        }
+
+        await this.productSyncService.updateStock(ctx, items);
     }
 
     // ---- Full Sync ----
