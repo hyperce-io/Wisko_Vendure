@@ -9,6 +9,8 @@ import {
     Product,
     LanguageCode,
     TransactionalConnection,
+    StockLevelService,
+    StockLocationService,
 } from '@vendure/core';
 import { SyncProductInput } from '../types';
 import { GlobalFlag } from '@vendure/common/lib/generated-types';
@@ -21,6 +23,8 @@ export class ProductSyncService {
         private productVariantService: ProductVariantService,
         private channelService: ChannelService,
         private connection: TransactionalConnection,
+        private stockLevelService: StockLevelService,
+        private stockLocationService: StockLocationService,
     ) {}
 
     async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product | undefined> {
@@ -191,17 +195,42 @@ export class ProductSyncService {
         }
     }
 
-    async updateStock(ctx: RequestContext, items: Array<{ sku: string; qty: number }>): Promise<void> {
+    async updateStock(ctx: RequestContext, items: Array<{ sku: string; qty: number; warehouse?: string }>): Promise<void> {
         for (const item of items) {
             const variant = await this.findVariantBySku(ctx, item.sku);
-            if (variant) {
-                await this.productVariantService.update(ctx, [{
-                    id: variant.id as ID,
-                    stockOnHand: item.qty,
-                }]);
-                Logger.info(`Stock updated: ${item.sku} → ${item.qty}`, 'ProductSync');
-            } else {
+            if (!variant) {
                 Logger.warn(`Stock update: variant ${item.sku} not found`, 'ProductSync');
+                continue;
+            }
+
+            if (item.warehouse) {
+                // Find stock location by warehouse name
+                const { items: locations } = await this.stockLocationService.findAll(ctx, {
+                    filter: { name: { contains: item.warehouse } },
+                    take: 1,
+                });
+
+                if (locations.length > 0) {
+                    const locationId = locations[0].id;
+                    // Get current stock level to calculate delta
+                    const currentLevel = await this.stockLevelService.getStockLevel(ctx, variant.id as ID, locationId);
+                    const currentQty = currentLevel?.stockOnHand ?? 0;
+                    const delta = item.qty - currentQty;
+                    if (delta !== 0) {
+                        await this.stockLevelService.updateStockOnHandForLocation(ctx, variant.id as ID, locationId, delta);
+                        Logger.info(`Stock updated: ${item.sku} @ ${item.warehouse} → ${item.qty} (delta: ${delta > 0 ? '+' : ''}${delta})`, 'ProductSync');
+                    } else {
+                        Logger.info(`Stock unchanged: ${item.sku} @ ${item.warehouse} = ${item.qty}`, 'ProductSync');
+                    }
+                } else {
+                    Logger.warn(`Stock location "${item.warehouse}" not found, updating default`, 'ProductSync');
+                    await this.productVariantService.update(ctx, [{ id: variant.id as ID, stockOnHand: item.qty }]);
+                    Logger.info(`Stock updated (default): ${item.sku} → ${item.qty}`, 'ProductSync');
+                }
+            } else {
+                // No warehouse specified — update via variant (default location)
+                await this.productVariantService.update(ctx, [{ id: variant.id as ID, stockOnHand: item.qty }]);
+                Logger.info(`Stock updated (default): ${item.sku} → ${item.qty}`, 'ProductSync');
             }
         }
     }
