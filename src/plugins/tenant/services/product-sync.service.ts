@@ -10,7 +10,7 @@ import {
     LanguageCode,
     TransactionalConnection,
     StockLevelService,
-    Channel,
+    StockLocationService,
 } from '@vendure/core';
 import { SyncProductInput } from '../types';
 import { GlobalFlag } from '@vendure/common/lib/generated-types';
@@ -24,6 +24,7 @@ export class ProductSyncService {
         private channelService: ChannelService,
         private connection: TransactionalConnection,
         private stockLevelService: StockLevelService,
+        private stockLocationService: StockLocationService,
     ) {}
 
     async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product | undefined> {
@@ -205,52 +206,67 @@ export class ProductSyncService {
     }
 
     /**
-     * Updates stock only at the stock location of the variant's assigned channel.
-     * Each channel has one stock location (excluding default).
+     * Updates stock only at the stock location belonging to the variant's assigned channel.
      * 
-     * Flow: variant → assigned channels (non-default) → stock locations for those channels → update stock there
+     * Flow:
+     * 1. Get variant's channels (exclude default)
+     * 2. Get all stock levels for the variant
+     * 3. For each stock level, load its stock location with channels
+     * 4. If any of the location's channels match the variant's channels (non-default) → update
      */
     private async updateStockForVariantChannels(ctx: RequestContext, variantId: ID, targetQty: number): Promise<void> {
-        // Get variant's assigned channels (exclude default)
-        const channelRows = await this.connection.rawConnection.query(
-            `SELECT c.id FROM product_variant_channels_channel pvcc
-             JOIN channel c ON c.id = pvcc."channelId"
-             WHERE pvcc."productVariantId" = $1 AND c.code != '__default_channel__'`,
-            [variantId],
+        // 1. Get variant's assigned channels (non-default)
+        const variant = await this.productVariantService.findOne(ctx, variantId, ['channels']);
+        if (!variant) return;
+
+        const variantChannelIds = new Set(
+            (variant.channels || [])
+                .filter(c => c.code !== '__default_channel__')
+                .map(c => String(c.id)),
         );
 
-        if (channelRows.length === 0) {
-            // Only in default channel — update via variant service
+        if (variantChannelIds.size === 0) {
+            // Only in default channel
             await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
             Logger.info(`Stock set (default only): variant ${variantId} → ${targetQty}`, 'ProductSync');
             return;
         }
 
-        const channelIds = channelRows.map((r: any) => r.id);
+        // 2. Get all stock levels for this variant
+        const stockLevels = await this.stockLevelService.getStockLevelsForVariant(ctx, variantId);
+        let updatedCount = 0;
 
-        // Get stock locations for those channels (exclude default stock location id=1)
-        const locationRows = await this.connection.rawConnection.query(
-            `SELECT DISTINCT sl.id FROM stock_location sl
-             JOIN stock_location_channels_channel slc ON slc."stockLocationId" = sl.id
-             WHERE slc."channelId" = ANY($1) AND sl.id != 1`,
-            [channelIds],
-        );
+        for (const level of stockLevels) {
+            // 3. Load stock location with its channels
+            const location = await this.stockLocationService.findOne(ctx, level.stockLocationId);
+            if (!location) continue;
 
-        if (locationRows.length === 0) {
-            await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
-            Logger.info(`Stock set (no channel location): variant ${variantId} → ${targetQty}`, 'ProductSync');
-            return;
-        }
+            // Hydrate channels on the location
+            const locationWithChannels = await this.connection.getRepository(ctx, location.constructor as any)
+                .findOne({ where: { id: location.id }, relations: { channels: true } });
+            if (!locationWithChannels) continue;
 
-        for (const row of locationRows) {
-            const level = await this.stockLevelService.getStockLevel(ctx, variantId, row.id);
-            const currentQty = level?.stockOnHand ?? 0;
-            const delta = targetQty - currentQty;
-            if (delta !== 0) {
-                await this.stockLevelService.updateStockOnHandForLocation(ctx, variantId, row.id, delta);
+            // 4. Check if this location belongs to any of the variant's channels (non-default)
+            const locationChannelIds = (locationWithChannels.channels || []).map((c: any) => String(c.id));
+            const isMatchingChannel = locationChannelIds.some((id: string) => variantChannelIds.has(id));
+
+            if (isMatchingChannel) {
+                const currentQty = level.stockOnHand ?? 0;
+                const delta = targetQty - currentQty;
+                if (delta !== 0) {
+                    await this.stockLevelService.updateStockOnHandForLocation(ctx, variantId, level.stockLocationId, delta);
+                }
+                updatedCount++;
             }
         }
-        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${locationRows.length} location${locationRows.length > 1 ? 's' : ''})`, 'ProductSync');
+
+        if (updatedCount > 0) {
+            Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${updatedCount} location${updatedCount > 1 ? 's' : ''})`, 'ProductSync');
+        } else {
+            // Fallback
+            await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
+            Logger.info(`Stock set (fallback): variant ${variantId} → ${targetQty}`, 'ProductSync');
+        }
     }
 
     // ---- Helpers ----
