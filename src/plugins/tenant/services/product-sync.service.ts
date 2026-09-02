@@ -24,7 +24,7 @@ export class ProductSyncService {
     ) {}
 
     async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product | undefined> {
-        const slug = input.slug || `erp-${input.erpProductId}`;
+        const slug = (input.slug || `erp-${input.erpProductId}`).toLowerCase();
         let product = await this.findByErpId(ctx, input.erpProductId);
 
         if (!product) {
@@ -207,7 +207,7 @@ export class ProductSyncService {
     }
 
     private async findByErpId(ctx: RequestContext, erpProductId: string): Promise<Product | undefined> {
-        const slug = `erp-${erpProductId}`;
+        const slug = `erp-${erpProductId}`.toLowerCase();
         const result = await this.productService.findOneBySlug(ctx, slug);
         if (result) return result as unknown as Product;
         const { items } = await this.productService.findAll(ctx, {

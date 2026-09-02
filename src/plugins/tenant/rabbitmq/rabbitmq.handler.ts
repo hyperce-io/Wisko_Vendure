@@ -225,26 +225,33 @@ export class RabbitMQMessageHandler {
     // ---- Stock ----
 
     private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
-        // Accept multiple formats:
-        // { sku: "ABC", qty: 50 }
-        // { product: { variants: [{ sku: "ABC", stockOnHand: 50 }] } }
-        // { items: [{ sku: "ABC", qty: 50 }] }
         const items: Array<{ sku: string; qty: number }> = [];
 
-        if (payload.sku && payload.qty !== undefined) {
+        // ERPNext format: { item_code, actual_qty, warehouse }
+        if (payload.item_code && payload.actual_qty !== undefined) {
+            items.push({ sku: payload.item_code, qty: payload.actual_qty });
+        }
+        // Simple format: { sku, qty }
+        else if (payload.sku && payload.qty !== undefined) {
             items.push({ sku: payload.sku, qty: payload.qty });
-        } else if (payload.product?.variants) {
+        }
+        // Nested format: { product.variants[] }
+        else if (payload.product?.variants) {
             for (const v of payload.product.variants) {
                 if (v.sku) items.push({ sku: v.sku, qty: v.stockOnHand ?? v.qty ?? 0 });
             }
-        } else if (payload.items) {
+        }
+        // Array format: { items[] }
+        else if (payload.items) {
             for (const item of payload.items) {
-                if (item.sku) items.push({ sku: item.sku, qty: item.qty ?? item.stockOnHand ?? 0 });
+                if (item.sku || item.item_code) {
+                    items.push({ sku: item.sku || item.item_code, qty: item.qty ?? item.actual_qty ?? item.stockOnHand ?? 0 });
+                }
             }
         }
 
         if (items.length === 0) {
-            Logger.warn('stock.level_changed: no valid items found in payload', 'RabbitMQHandler');
+            Logger.warn(`stock.level_changed: no valid items found in payload`, 'RabbitMQHandler');
             Logger.warn(`Payload: ${JSON.stringify(payload).substring(0, 500)}`, 'RabbitMQHandler');
             return;
         }
