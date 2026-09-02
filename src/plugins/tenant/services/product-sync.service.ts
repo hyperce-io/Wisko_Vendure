@@ -205,45 +205,52 @@ export class ProductSyncService {
     }
 
     /**
-     * Updates stock only at stock locations linked to the variant's assigned channels.
-     * Each channel has one stock location — we only update locations for channels
-     * where the product is actually assigned.
+     * Updates stock only at the stock location of the variant's assigned channel.
+     * Each channel has one stock location (excluding default).
+     * 
+     * Flow: variant → assigned channels (non-default) → stock locations for those channels → update stock there
      */
     private async updateStockForVariantChannels(ctx: RequestContext, variantId: ID, targetQty: number): Promise<void> {
-        // Get the product's assigned channels
-        const variant = await this.productVariantService.findOne(ctx, variantId, ['channels']);
-        if (!variant) return;
-
-        const assignedChannelIds = new Set(
-            (variant.channels || []).map(c => String(c.id)),
+        // Get variant's assigned channels (exclude default)
+        const channelRows = await this.connection.rawConnection.query(
+            `SELECT c.id FROM product_variant_channels_channel pvcc
+             JOIN channel c ON c.id = pvcc."channelId"
+             WHERE pvcc."productVariantId" = $1 AND c.code != '__default_channel__'`,
+            [variantId],
         );
 
-        // Get stock locations that belong to those channels
-        const stockLocationRows = await this.connection.rawConnection.query(
-            `SELECT DISTINCT sl.id as "stockLocationId"
-             FROM stock_location sl
-             JOIN stock_location_channels_channel slc ON slc."stockLocationId" = sl.id
-             WHERE slc."channelId" = ANY($1)`,
-            [Array.from(assignedChannelIds)],
-        );
-
-        if (stockLocationRows.length === 0) {
+        if (channelRows.length === 0) {
+            // Only in default channel — update via variant service
             await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
-            Logger.info(`Stock set (no channel locations): variant ${variantId} → ${targetQty}`, 'ProductSync');
+            Logger.info(`Stock set (default only): variant ${variantId} → ${targetQty}`, 'ProductSync');
             return;
         }
 
-        for (const row of stockLocationRows) {
-            const level = await this.stockLevelService.getStockLevel(ctx, variantId, row.stockLocationId);
+        const channelIds = channelRows.map((r: any) => r.id);
+
+        // Get stock locations for those channels (exclude default stock location id=1)
+        const locationRows = await this.connection.rawConnection.query(
+            `SELECT DISTINCT sl.id FROM stock_location sl
+             JOIN stock_location_channels_channel slc ON slc."stockLocationId" = sl.id
+             WHERE slc."channelId" = ANY($1) AND sl.id != 1`,
+            [channelIds],
+        );
+
+        if (locationRows.length === 0) {
+            await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
+            Logger.info(`Stock set (no channel location): variant ${variantId} → ${targetQty}`, 'ProductSync');
+            return;
+        }
+
+        for (const row of locationRows) {
+            const level = await this.stockLevelService.getStockLevel(ctx, variantId, row.id);
             const currentQty = level?.stockOnHand ?? 0;
             const delta = targetQty - currentQty;
             if (delta !== 0) {
-                await this.stockLevelService.updateStockOnHandForLocation(
-                    ctx, variantId, row.stockLocationId, delta,
-                );
+                await this.stockLevelService.updateStockOnHandForLocation(ctx, variantId, row.id, delta);
             }
         }
-        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${stockLocationRows.length} channel locations)`, 'ProductSync');
+        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${locationRows.length} location${locationRows.length > 1 ? 's' : ''})`, 'ProductSync');
     }
 
     // ---- Helpers ----
