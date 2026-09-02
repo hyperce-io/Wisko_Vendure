@@ -4,6 +4,8 @@ import {
     DefaultSchedulerPlugin,
     DefaultSearchPlugin,
     VendureConfig,
+    LogLevel,
+    DefaultLogger,
 } from '@vendure/core';
 import { defaultEmailHandlers, EmailPlugin, FileBasedTemplateLoader } from '@vendure/email-plugin';
 import { AssetServerPlugin, configureS3AssetStorage } from '@vendure/asset-server-plugin';
@@ -17,6 +19,7 @@ const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;
 
 export const config: VendureConfig = {
+    logger: new DefaultLogger({ level: LogLevel.Verbose }),
     apiOptions: {
         port: serverPort,
         adminApiPath: 'admin-api',

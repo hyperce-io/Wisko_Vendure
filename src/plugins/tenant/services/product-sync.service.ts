@@ -9,6 +9,8 @@ import {
     Product,
     LanguageCode,
     TransactionalConnection,
+    StockLevelService,
+    Channel,
 } from '@vendure/core';
 import { SyncProductInput } from '../types';
 import { GlobalFlag } from '@vendure/common/lib/generated-types';
@@ -21,14 +23,14 @@ export class ProductSyncService {
         private productVariantService: ProductVariantService,
         private channelService: ChannelService,
         private connection: TransactionalConnection,
+        private stockLevelService: StockLevelService,
     ) {}
 
     async syncProduct(ctx: RequestContext, input: SyncProductInput): Promise<Product | undefined> {
-        const slug = input.slug || `erp-${input.erpProductId}`;
+        const slug = (input.slug || `erp-${input.erpProductId}`).toLowerCase();
         let product = await this.findByErpId(ctx, input.erpProductId);
 
         if (!product) {
-            // Create product
             const created = await this.productService.create(ctx, {
                 enabled: input.enabled !== false,
                 translations: [{
@@ -41,14 +43,13 @@ export class ProductSyncService {
             product = created as unknown as Product;
             Logger.info(`Created product: ${input.name} (erp: ${input.erpProductId})`, 'ProductSync');
 
-            // Create variants ONE AT A TIME to avoid option-combination conflict
             if (input.variants?.length) {
                 for (const v of input.variants) {
                     try {
                         await this.productVariantService.create(ctx, [{
                             productId: product.id,
                             sku: v.sku,
-                            price: v.price,
+                            price: v.price ?? 0,
                             stockOnHand: v.stockOnHand ?? 0,
                             trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                             enabled: v.enabled !== false,
@@ -56,13 +57,12 @@ export class ProductSyncService {
                         }]);
                         Logger.info(`Created variant: ${v.sku}`, 'ProductSync');
                     } catch (e: any) {
-                        // If variant with same option combo exists, update it instead
                         const existing = await this.findVariantBySku(ctx, v.sku);
                         if (existing) {
                             await this.productVariantService.update(ctx, [{
                                 id: existing.id as ID,
                                 sku: v.sku,
-                                price: v.price,
+                                price: v.price ?? 0,
                                 stockOnHand: v.stockOnHand,
                                 trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                                 enabled: v.enabled,
@@ -76,7 +76,6 @@ export class ProductSyncService {
                 }
             }
         } else {
-            // Update existing product
             await this.productService.update(ctx, {
                 id: product.id,
                 enabled: input.enabled,
@@ -89,7 +88,6 @@ export class ProductSyncService {
             });
             Logger.info(`Updated product: ${input.name} (erp: ${input.erpProductId})`, 'ProductSync');
 
-            // Update/create variants by SKU
             if (input.variants?.length) {
                 for (const v of input.variants) {
                     const existing = await this.findVariantBySku(ctx, v.sku);
@@ -97,19 +95,24 @@ export class ProductSyncService {
                         await this.productVariantService.update(ctx, [{
                             id: existing.id as ID,
                             sku: v.sku,
-                            price: v.price,
+                            price: v.price ?? 0,
                             stockOnHand: v.stockOnHand,
                             trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                             enabled: v.enabled,
                             translations: [{ languageCode: LanguageCode.en, name: v.name }],
                         }]);
                         Logger.info(`Updated variant: ${v.sku}`, 'ProductSync');
+
+                        // Also update stock at channel-specific stock locations
+                        if (v.stockOnHand !== undefined) {
+                            await this.updateStockForVariantChannels(ctx, existing.id as ID, v.stockOnHand);
+                        }
                     } else {
                         try {
                             await this.productVariantService.create(ctx, [{
                                 productId: product.id,
                                 sku: v.sku,
-                                price: v.price,
+                                price: v.price ?? 0,
                                 stockOnHand: v.stockOnHand ?? 0,
                                 trackInventory: v.trackInventory ? GlobalFlag.TRUE : GlobalFlag.FALSE,
                                 enabled: v.enabled !== false,
@@ -124,7 +127,6 @@ export class ProductSyncService {
             }
         }
 
-        // Assign to channels
         if (input.channelCodes?.length && product) {
             await this.assignToChannels(ctx, product.id, input.channelCodes);
         }
@@ -191,8 +193,50 @@ export class ProductSyncService {
         }
     }
 
+    async updateStock(ctx: RequestContext, items: Array<{ sku: string; qty: number }>): Promise<void> {
+        for (const item of items) {
+            const variant = await this.findVariantBySku(ctx, item.sku);
+            if (!variant) {
+                Logger.warn(`Stock update: variant ${item.sku} not found`, 'ProductSync');
+                continue;
+            }
+
+            // Update stock at all channel stock locations for this variant
+            await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty);
+        }
+    }
+
+    /**
+     * Updates stock at all stock locations linked to the variant's channels.
+     * Each channel has one stock location. We find all stock levels for the variant
+     * and update each one to the target quantity.
+     */
+    private async updateStockForVariantChannels(ctx: RequestContext, variantId: ID, targetQty: number): Promise<void> {
+        const stockLevels = await this.stockLevelService.getStockLevelsForVariant(ctx, variantId);
+
+        if (stockLevels.length === 0) {
+            // No stock levels exist yet — use variant update as fallback
+            await this.productVariantService.update(ctx, [{ id: variantId, stockOnHand: targetQty }]);
+            Logger.info(`Stock set (no locations): variant ${variantId} → ${targetQty}`, 'ProductSync');
+            return;
+        }
+
+        for (const level of stockLevels) {
+            const currentQty = level.stockOnHand ?? 0;
+            const delta = targetQty - currentQty;
+            if (delta !== 0) {
+                await this.stockLevelService.updateStockOnHandForLocation(
+                    ctx, variantId, level.stockLocationId, delta,
+                );
+            }
+        }
+        Logger.info(`Stock updated: variant ${variantId} → ${targetQty} (${stockLevels.length} locations)`, 'ProductSync');
+    }
+
+    // ---- Helpers ----
+
     private async findByErpId(ctx: RequestContext, erpProductId: string): Promise<Product | undefined> {
-        const slug = `erp-${erpProductId}`;
+        const slug = `erp-${erpProductId}`.toLowerCase();
         const result = await this.productService.findOneBySlug(ctx, slug);
         if (result) return result as unknown as Product;
         const { items } = await this.productService.findAll(ctx, {

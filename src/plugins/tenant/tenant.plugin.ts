@@ -5,9 +5,12 @@ import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { OrderEventPublisher } from './events/order-event.publisher';
+import { CustomerEventPublisher } from './events/customer-event.publisher';
 import { TenantBoundaryGuard } from './guards/tenant-boundary.guard';
 import { TenantAdminResolver } from './api/tenant-admin.resolver';
+import { TenantShopResolver } from './api/tenant-shop.resolver';
 import { adminApiExtensions } from './api/api-extensions';
+import { shopApiExtensions } from './api/shop-api-extensions';
 import { RabbitMQConsumer } from './rabbitmq/rabbitmq.consumer';
 import { RabbitMQPublisher } from './rabbitmq/rabbitmq.publisher';
 import { RabbitMQMessageHandler } from './rabbitmq/rabbitmq.handler';
@@ -22,6 +25,7 @@ import './types';
         ProductSyncService,
         TenantChannelHandler,
         OrderEventPublisher,
+        CustomerEventPublisher,
         TenantBoundaryGuard,
         RabbitMQConsumer,
         RabbitMQPublisher,
@@ -30,6 +34,10 @@ import './types';
     adminApiExtensions: {
         schema: adminApiExtensions,
         resolvers: [TenantAdminResolver],
+    },
+    shopApiExtensions: {
+        schema: shopApiExtensions,
+        resolvers: [TenantShopResolver],
     },
     dashboard: './dashboard/index.tsx',
     configuration: (config: RuntimeVendureConfig) => {
@@ -46,7 +54,9 @@ import './types';
                 type: 'string',
                 unique: true,
                 nullable: true,
-                internal: true,
+                internal: false,
+                readonly: true,
+                label: [{ languageCode: 'en' as any, value: 'ERP Channel ID' }],
             },
         );
         config.customFields.Administrator.push({

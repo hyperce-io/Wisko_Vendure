@@ -26,12 +26,20 @@ export const ROUTING_KEYS = {
     PRODUCT_ASSIGNED: 'product.assigned',
     PRODUCT_REMOVED: 'product.removed',
 
+    STOCK_LEVEL_CHANGED: 'stock.level_changed',
+
     ORDER_PLACED: 'order.placed',
     ORDER_PAYMENT_AUTHORIZED: 'order.payment_authorized',
     ORDER_PAYMENT_SETTLED: 'order.payment_settled',
     ORDER_SHIPPED: 'order.shipped',
     ORDER_DELIVERED: 'order.delivered',
     ORDER_CANCELLED: 'order.cancelled',
+
+    CUSTOMER_REGISTERED: 'customer.registered',
+    CUSTOMER_UPDATED: 'customer.updated',
+    CUSTOMER_DELETED: 'customer.deleted',
+    CUSTOMER_ADDRESS_CREATED: 'customer.address_created',
+    CUSTOMER_ADDRESS_UPDATED: 'customer.address_updated',
 
     SYNC_FULL: 'sync.full',
 } as const;

@@ -8,6 +8,7 @@ export const adminApiExtensions = gql`
         defaultCurrencyCode: CurrencyCode!
         defaultLanguageCode: LanguageCode!
         pricesIncludeTax: Boolean!
+        erpChannelId: String
     }
 
     type TenantAdmin {

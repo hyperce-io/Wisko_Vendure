@@ -426,11 +426,16 @@ export class TenantService {
     // HELPERS
     // ========================================================================
 
-    async getChannelsForTenant(tenantId: ID): Promise<Channel[]> {
+    async getChannelsForTenant(tenantId: ID): Promise<any[]> {
         // TypeORM cannot type custom field relations in where clauses
-        return this.connection.rawConnection
+        const channels = await this.connection.rawConnection
             .getRepository(Channel)
             .find({ where: { customFields: { tenant: { id: tenantId } } } as any });
+        // Flatten erpChannelId from customFields to top level for GraphQL
+        return channels.map(ch => ({
+            ...ch,
+            erpChannelId: ch.customFields?.erpChannelId || null,
+        }));
     }
 
     async getAdminsForTenant(tenantId: ID): Promise<Administrator[]> {

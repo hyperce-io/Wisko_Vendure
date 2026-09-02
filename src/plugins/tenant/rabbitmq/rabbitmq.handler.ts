@@ -94,6 +94,11 @@ export class RabbitMQMessageHandler {
                 await this.handleProductRemove(ctx, payload);
                 break;
 
+            // Stock
+            case ROUTING_KEYS.STOCK_LEVEL_CHANGED:
+                await this.handleStockLevelChanged(ctx, payload);
+                break;
+
             // Full sync
             case ROUTING_KEYS.SYNC_FULL:
                 await this.handleFullSync(ctx, payload);
@@ -180,9 +185,12 @@ export class RabbitMQMessageHandler {
     // ---- Product ----
 
     private async handleProductSync(ctx: RequestContext, payload: any) {
-        const { product } = payload;
+        const { product, idempotency_key } = payload;
         if (!product?.erpProductId) throw new Error('product.erpProductId is required');
         if (!product?.name) throw new Error('product.name is required');
+        if (idempotency_key) {
+            Logger.info(`Product sync idempotency_key: ${idempotency_key}`, 'RabbitMQHandler');
+        }
         const input: SyncProductInput = {
             erpProductId: product.erpProductId,
             name: product.name,
@@ -212,6 +220,43 @@ export class RabbitMQMessageHandler {
         if (!product?.erpProductId) throw new Error('product.erpProductId is required');
         if (!product?.channelCodes?.length) throw new Error('product.channelCodes is required');
         await this.productSyncService.removeFromChannels(ctx, product.erpProductId, product.channelCodes);
+    }
+
+    // ---- Stock ----
+
+    private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
+        const items: Array<{ sku: string; qty: number; warehouse?: string }> = [];
+
+        // ERPNext format: { item_code, actual_qty, warehouse }
+        if (payload.item_code && payload.actual_qty !== undefined) {
+            items.push({ sku: payload.item_code, qty: payload.actual_qty, warehouse: payload.warehouse });
+        }
+        // Simple format: { sku, qty }
+        else if (payload.sku && payload.qty !== undefined) {
+            items.push({ sku: payload.sku, qty: payload.qty });
+        }
+        // Nested format: { product.variants[] }
+        else if (payload.product?.variants) {
+            for (const v of payload.product.variants) {
+                if (v.sku) items.push({ sku: v.sku, qty: v.stockOnHand ?? v.qty ?? 0 });
+            }
+        }
+        // Array format: { items[] }
+        else if (payload.items) {
+            for (const item of payload.items) {
+                if (item.sku || item.item_code) {
+                    items.push({ sku: item.sku || item.item_code, qty: item.qty ?? item.actual_qty ?? item.stockOnHand ?? 0 });
+                }
+            }
+        }
+
+        if (items.length === 0) {
+            Logger.warn(`stock.level_changed: no valid items found in payload`, 'RabbitMQHandler');
+            Logger.warn(`Payload: ${JSON.stringify(payload).substring(0, 500)}`, 'RabbitMQHandler');
+            return;
+        }
+
+        await this.productSyncService.updateStock(ctx, items);
     }
 
     // ---- Full Sync ----
