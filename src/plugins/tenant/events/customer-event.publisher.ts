@@ -9,9 +9,11 @@ import {
     EntityHydrator,
     Customer,
     RequestContext,
+    TransactionalConnection,
 } from '@vendure/core';
 import { RabbitMQPublisher } from '../rabbitmq/rabbitmq.publisher';
 import { ROUTING_KEYS } from '../rabbitmq/rabbitmq.constants';
+import { resolveErpChannel } from './erp-channel.resolver';
 
 @Injectable()
 export class CustomerEventPublisher implements OnApplicationBootstrap {
@@ -20,6 +22,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
         private processContext: ProcessContext,
         private publisher: RabbitMQPublisher,
         private entityHydrator: EntityHydrator,
+        private connection: TransactionalConnection,
     ) {}
 
     onApplicationBootstrap() {
@@ -48,6 +51,8 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                         : ROUTING_KEYS.CUSTOMER_ADDRESS_UPDATED;
 
                     const address = event.entity;
+                    // Prefer the customer's own channels; falls back to ctx when not loaded.
+                    const channel = await resolveErpChannel(this.connection, event.ctx, address.customer?.channels);
                     const payload = {
                         event: `customer.address_${event.type}`,
                         timestamp: new Date().toISOString(),
@@ -65,6 +70,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                             defaultBillingAddress: address.defaultBillingAddress,
                         },
                         customerId: address.customer?.id ? String(address.customer.id) : null,
+                        channel,
                     };
                     await this.publisher.publish(routingKey, payload);
                 } catch (error: any) {
@@ -85,6 +91,8 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                             identifier: event.user.identifier,
                         },
                         channelCode: event.ctx.channel?.code || null,
+                        // No Customer entity on this event — resolve from the request's channel.
+                        channel: await resolveErpChannel(this.connection, event.ctx, null),
                     };
                     await this.publisher.publish(ROUTING_KEYS.CUSTOMER_REGISTERED, payload);
                 } catch (error: any) {
@@ -114,8 +122,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
             relations: ['channels', 'addresses'],
         });
 
-        const channel = customer.channels?.find(c => c.code !== '__default_channel__') || customer.channels?.[0];
-        const erpChannelId = channel?.customFields?.erpChannelId || null;
+        const channel = await resolveErpChannel(this.connection, ctx, customer.channels);
 
         return {
             event: `customer.${type}`,
@@ -142,11 +149,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                 defaultShippingAddress: a.defaultShippingAddress,
                 defaultBillingAddress: a.defaultBillingAddress,
             })),
-            channel: channel ? {
-                id: String(channel.id),
-                code: channel.code,
-                erpChannelId,
-            } : null,
+            channel,
         };
     }
 }

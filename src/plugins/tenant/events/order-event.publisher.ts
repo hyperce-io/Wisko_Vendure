@@ -8,11 +8,11 @@ import {
     RequestContext,
     Order,
     EntityHydrator,
-    Channel,
-    ID,
+    TransactionalConnection,
 } from '@vendure/core';
 import { RabbitMQPublisher } from '../rabbitmq/rabbitmq.publisher';
 import { ROUTING_KEYS } from '../rabbitmq/rabbitmq.constants';
+import { resolveErpChannel } from './erp-channel.resolver';
 
 const STATE_TO_ROUTING_KEY: Record<string, string> = {
     // ArrangingPayment skipped — no need to publish before payment
@@ -33,6 +33,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
         private publisher: RabbitMQPublisher,
         private orderService: OrderService,
         private entityHydrator: EntityHydrator,
+        private connection: TransactionalConnection,
     ) {}
 
     onApplicationBootstrap() {
@@ -83,8 +84,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
             Logger.warn(`Hydration partial failure: ${e.message}`, 'OrderEventPublisher');
         }
 
-        const channel = order.channels?.find((c: Channel) => c.code !== '__default_channel__') || order.channels?.[0];
-        const erpChannelId = channel?.customFields?.erpChannelId || null;
+        const channel = await resolveErpChannel(this.connection, ctx, order.channels);
 
         return {
             event: `order.${this.stateToEventName(toState)}`,
@@ -114,12 +114,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                 couponCodes: order.couponCodes || [],
 
                 // Channel
-                channel: channel ? {
-                    id: String(channel.id),
-                    code: channel.code,
-                    token: channel.token,
-                    erpChannelId,
-                } : null,
+                channel,
 
                 // Customer
                 customer: order.customer ? {
