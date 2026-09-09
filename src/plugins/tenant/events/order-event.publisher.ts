@@ -217,7 +217,11 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
             city: address.city || null,
             province: address.province || null,
             postalCode: address.postalCode || null,
-            country: address.countryCode || address.country || null,
+            // Vendure stores both on the order's address snapshot: `country` is the
+            // full name ("India"), `countryCode` the ISO code ("IN"). Send both —
+            // ERPNext's Address doctype links `country` by name, not by code.
+            country: address.country || null,
+            countryCode: address.countryCode || null,
             phoneNumber: address.phoneNumber || null,
         };
     }
