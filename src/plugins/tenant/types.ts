@@ -1,4 +1,4 @@
-import { Channel, Administrator } from '@vendure/core';
+import { Channel, Administrator, Asset } from '@vendure/core';
 import { Company } from './entities/company.entity';
 import { Tenant } from './entities/tenant.entity';
 
@@ -28,6 +28,13 @@ export interface SyncChannelInput {
     defaultCurrencyCode?: string;
     defaultLanguageCode?: string;
     pricesIncludeTax?: boolean;
+}
+
+export interface SyncInvoiceInput {
+    orderCode: string;
+    fileUrl: string;
+    idempotencyKey?: string;
+    erpChannelId?: string;
 }
 
 export interface AdminInput {
@@ -134,5 +141,9 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     }
     interface CustomAdministratorFields {
         tenant: Tenant | null;
+    }
+    interface CustomOrderFields {
+        erpInvoice: Asset | null;
+        erpInvoiceKey: string | null;
     }
 }

@@ -9,6 +9,7 @@ import {
 } from '@vendure/core';
 import { TenantService } from '../services/tenant.service';
 import { ProductSyncService } from '../services/product-sync.service';
+import { InvoiceSyncService } from '../services/invoice-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
     SyncCompanyInput,
@@ -18,6 +19,7 @@ import {
     SyncProductInput,
     AssignProductToChannelInput,
     RemoveProductFromChannelInput,
+    SyncInvoiceInput,
 } from '../types';
 
 @Injectable()
@@ -25,6 +27,7 @@ export class RabbitMQMessageHandler {
     constructor(
         private tenantService: TenantService,
         private productSyncService: ProductSyncService,
+        private invoiceSyncService: InvoiceSyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
         private configService: ConfigService,
@@ -97,6 +100,11 @@ export class RabbitMQMessageHandler {
             // Stock
             case ROUTING_KEYS.STOCK_LEVEL_CHANGED:
                 await this.handleStockLevelChanged(ctx, payload);
+                break;
+
+            // Invoice
+            case ROUTING_KEYS.INVOICE_CREATED:
+                await this.handleInvoiceSync(ctx, payload);
                 break;
 
             // Full sync
@@ -257,6 +265,24 @@ export class RabbitMQMessageHandler {
         }
 
         await this.productSyncService.updateStock(ctx, items);
+    }
+
+    // ---- Invoice ----
+
+    private async handleInvoiceSync(ctx: RequestContext, payload: any) {
+        // ERPNext sends snake_case; accept camelCase too so the contract is forgiving.
+        const orderCode = payload.vendure_order_code || payload.vendureOrderCode || payload.orderCode;
+        const fileUrl = payload.fileUrl || payload.file_url;
+        if (!orderCode) throw new Error('vendure_order_code is required');
+        if (!fileUrl) throw new Error('fileUrl is required');
+
+        const input: SyncInvoiceInput = {
+            orderCode,
+            fileUrl,
+            idempotencyKey: payload.idempotency_key || payload.idempotencyKey,
+            erpChannelId: payload.erp_channel_id || payload.erpChannelId,
+        };
+        await this.invoiceSyncService.attachInvoice(ctx, input);
     }
 
     // ---- Full Sync ----

@@ -41,5 +41,9 @@ export const ROUTING_KEYS = {
     CUSTOMER_ADDRESS_CREATED: 'customer.address_created',
     CUSTOMER_ADDRESS_UPDATED: 'customer.address_updated',
 
+    // Inbound only. Deliberately NOT under `order.*`: Vendure publishes its own
+    // order events to this same exchange, so binding `order.*` would feed them back in.
+    INVOICE_CREATED: 'invoice.created',
+
     SYNC_FULL: 'sync.full',
 } as const;

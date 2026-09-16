@@ -38,6 +38,7 @@ DLQ:       wisko.sync.vendure.dlq
 | `product.deleted` | Soft-delete a product |
 | `product.assigned` | Assign a product to channel(s) |
 | `product.removed` | Remove a product from channel(s) |
+| `invoice.created` | Attach an ERP-generated invoice PDF to an order |
 | `sync.full` | Full org sync (company + tenants + channels + products in one call) |
 
 ---
@@ -308,6 +309,43 @@ Remove a product from specific channels.
   }
 }
 ```
+
+---
+
+## Invoice
+
+### invoice.created
+
+Attaches an invoice PDF generated in ERP to an existing Vendure order.
+
+```json
+{
+  "vendure_order_code": "DEPLOY-TEST-1",
+  "fileUrl": "https://clicksdev.blob.core.windows.net/frappe-uploads-private/invoices/ACC-SINV-2026-00014.pdf?se=...&sig=...",
+  "idempotency_key": "erpnext:invoice:ACC-SINV-2026-00014:DEPLOY-TEST-1",
+  "erp_channel_id": "582c9de64650d31c"
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `vendure_order_code` | Yes | Must match an existing order; unknown codes are rejected to the DLQ |
+| `fileUrl` | Yes | Downloaded immediately and stored permanently — see below |
+| `idempotency_key` | No | Redelivery with the same key is a no-op |
+| `erp_channel_id` | No | Accepted, not currently used for routing |
+
+**The routing key is `invoice.created`, not `order.invoice_created`.** Vendure
+publishes its own `order.*` events to this same exchange, so nothing under
+`order.*` is bound inbound — a message sent there would never be consumed.
+
+**`fileUrl` is fetched at once, while the SAS signature is still valid.** The
+links ERP sends expire (`?se=<expiry>`) and point into a private container, so
+the URL is not stored; the PDF is downloaded and kept as a Vendure Asset. If the
+link has already expired by the time the message is processed, the message is
+rejected to the DLQ rather than silently recording a dead link.
+
+Other fields in the message (`currency`, `total_taxes_and_charges`, `taxes[]`)
+are accepted and ignored — Vendure computes its own tax.
 
 ---
 

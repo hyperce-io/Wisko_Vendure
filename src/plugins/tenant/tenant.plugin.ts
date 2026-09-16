@@ -1,8 +1,9 @@
-import { PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendure/core';
+import { Asset, PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendure/core';
 import { Tenant } from './entities/tenant.entity';
 import { Company } from './entities/company.entity';
 import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
+import { InvoiceSyncService } from './services/invoice-sync.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { OrderEventPublisher } from './events/order-event.publisher';
 import { CustomerEventPublisher } from './events/customer-event.publisher';
@@ -23,6 +24,7 @@ import './types';
     providers: [
         TenantService,
         ProductSyncService,
+        InvoiceSyncService,
         TenantChannelHandler,
         OrderEventPublisher,
         CustomerEventPublisher,
@@ -57,6 +59,25 @@ import './types';
                 internal: false,
                 readonly: true,
                 label: [{ languageCode: 'en' as any, value: 'ERP Channel ID' }],
+            },
+        );
+        config.customFields.Order.push(
+            {
+                // The ERP invoice PDF, downloaded from ERP's expiring SAS link
+                // and stored permanently. See InvoiceSyncService.
+                name: 'erpInvoice',
+                type: 'relation',
+                entity: Asset,
+                nullable: true,
+                readonly: true,
+                label: [{ languageCode: 'en' as any, value: 'ERP Invoice' }],
+            },
+            {
+                // Dedupe key from ERP, so a redelivered message is not re-downloaded.
+                name: 'erpInvoiceKey',
+                type: 'string',
+                nullable: true,
+                internal: true,
             },
         );
         config.customFields.Administrator.push({
