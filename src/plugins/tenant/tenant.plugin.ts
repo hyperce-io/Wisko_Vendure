@@ -71,6 +71,8 @@ import './types';
                 nullable: true,
                 readonly: true,
                 label: [{ languageCode: 'en' as any, value: 'ERP Invoice' }],
+                // Rendered as a download link; see ErpInvoiceLink in the dashboard extension.
+                ui: { component: 'wisko.erp-invoice-link' },
             },
             {
                 // Dedupe key from ERP, so a redelivered message is not re-downloaded.

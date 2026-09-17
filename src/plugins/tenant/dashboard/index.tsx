@@ -11,6 +11,8 @@ import {
     Page,
     PageBlock,
     PageLayout,
+    usePage,
+    type DashboardFormComponent,
 } from '@vendure/dashboard';
 import { graphql } from '@/gql';
 import React from 'react';
@@ -327,9 +329,44 @@ function StatCard({ label, value, variant = 'default' }: { label: string; value:
     );
 }
 
+// ---- ERP Invoice (Order custom field) ----
+
+/**
+ * Replaces the default asset picker for `Order.customFields.erpInvoice`.
+ *
+ * The field is readonly, so Vendure leaves it out of the update input. The
+ * dashboard maps relation values into the form (`erpInvoice` -> `erpInvoiceId`)
+ * using the update input's fields, so a readonly relation is never mapped and
+ * the stock picker shows as empty even when an invoice is attached. Read the
+ * value from the loaded entity instead, and render a link rather than a picker:
+ * the invoice comes from ERP and isn't meant to be changed here.
+ */
+const ErpInvoiceLink: DashboardFormComponent = () => {
+    const { entity } = usePage();
+    const invoice = entity?.customFields?.erpInvoice;
+
+    if (!invoice?.source) {
+        return <p className="text-sm text-muted-foreground">No invoice received from ERP yet.</p>;
+    }
+    return (
+        <a
+            href={invoice.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+            Download invoice
+            <span className="text-muted-foreground font-normal">({invoice.name})</span>
+        </a>
+    );
+};
+
 // ---- Register Extension ----
 
 defineDashboardExtension({
+    customFormComponents: {
+        customFields: [{ id: 'wisko.erp-invoice-link', component: ErpInvoiceLink }],
+    },
     routes: [{
         path: '/organizations',
         loader: () => ({ breadcrumb: 'Organizations' }),
