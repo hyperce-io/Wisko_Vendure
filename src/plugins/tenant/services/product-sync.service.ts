@@ -3,21 +3,21 @@ import { GlobalFlag } from "@vendure/common/lib/generated-types";
 import { normalizeString } from "@vendure/common/lib/normalize-string";
 import { unique } from "@vendure/common/lib/unique";
 import {
-    Channel,
-    ChannelService,
-    ID,
-    idsAreEqual,
-    LanguageCode,
-    Logger,
-    Product,
-    ProductOptionGroupService,
-    ProductOptionService,
-    ProductService,
-    ProductVariantService,
-    RequestContext,
-    StockLevelService,
-    StockLocationService,
-    TransactionalConnection,
+  Channel,
+  ChannelService,
+  ID,
+  idsAreEqual,
+  LanguageCode,
+  Logger,
+  Product,
+  ProductOptionGroupService,
+  ProductOptionService,
+  ProductService,
+  ProductVariantService,
+  RequestContext,
+  StockLevelService,
+  StockLocationService,
+  TransactionalConnection,
 } from "@vendure/core";
 import "../types";
 import { ProductVariantInput, SyncProductInput } from "../types";
@@ -246,8 +246,8 @@ export class ProductSyncService {
         ctx,
         productId,
       );
-
-    for (const group of unique(variantOptions.map((option) => option.group))) {
+    const groups = unique(variantOptions.map((option) => option.group));
+    for (const group of groups) {
       const groupOptions = variantOptions.filter(
         (option) => option.group === group,
       );
