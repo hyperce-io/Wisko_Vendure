@@ -1,4 +1,4 @@
-import { Channel, Administrator, Asset } from '@vendure/core';
+import { Channel, Administrator, Asset, CurrencyCode } from '@vendure/core';
 import { Company } from './entities/company.entity';
 import { Tenant } from './entities/tenant.entity';
 
@@ -90,10 +90,24 @@ export interface UpdateCompanyInput {
 
 // ---- Product sync input types ----
 
+export interface ProductVariantOptionInput {
+    group: string;
+    groupName: string;
+    value: string;
+}
+
+/** A selling price in one currency, in minor units. */
+export interface ProductVariantPriceInput {
+    currencyCode: CurrencyCode;
+    amount: number;
+}
+
 export interface ProductVariantInput {
     sku: string;
     name: string;
-    price: number;
+    price: number | null;
+    prices?: ProductVariantPriceInput[];
+    options?: ProductVariantOptionInput[];
     stockOnHand?: number;
     trackInventory?: boolean;
     enabled?: boolean;
