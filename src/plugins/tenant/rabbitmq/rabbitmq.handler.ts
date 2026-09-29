@@ -234,10 +234,12 @@ export class RabbitMQMessageHandler {
 
     private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
         const items: Array<{ sku: string; qty: number; warehouse?: string }> = [];
+        let erpChannelId: string | undefined;
 
         // ERPNext format: { item_code, actual_qty, warehouse }
         if (payload.item_code && payload.actual_qty !== undefined) {
             items.push({ sku: payload.item_code, qty: payload.actual_qty, warehouse: payload.warehouse });
+            erpChannelId = payload.erp_channel_id;
         }
         // Simple format: { sku, qty }
         else if (payload.sku && payload.qty !== undefined) {
@@ -264,7 +266,7 @@ export class RabbitMQMessageHandler {
             return;
         }
 
-        await this.productSyncService.updateStock(ctx, items);
+        await this.productSyncService.updateStock(ctx, items, erpChannelId);
     }
 
     // ---- Invoice ----

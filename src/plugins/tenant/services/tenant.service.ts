@@ -16,10 +16,12 @@ import {
     Role,
     Permission,
     isGraphQlErrorResult,
+    StockLocationService,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
 import { TENANT_ADMIN_PERMISSIONS } from '../constants';
+import { ensureChannelStockLocation } from './channel-stock-location';
 import {
     SyncCompanyInput,
     SyncTenantInput,
@@ -40,6 +42,7 @@ export class TenantService {
         private channelService: ChannelService,
         private roleService: RoleService,
         private administratorService: AdministratorService,
+        private stockLocationService: StockLocationService,
     ) {}
 
     // ========================================================================
@@ -282,7 +285,10 @@ export class TenantService {
             if (input.code) updatePayload.code = input.code;
             if (input.defaultLanguageCode) updatePayload.defaultLanguageCode = input.defaultLanguageCode;
             if (input.defaultCurrencyCode) updatePayload.defaultCurrencyCode = input.defaultCurrencyCode;
-            return this.channelService.update(ctx, updatePayload) as Promise<Channel>;
+            const updated = (await this.channelService.update(ctx, updatePayload)) as Channel;
+            // Also gives channels created before stock locations were set up their own.
+            await ensureChannelStockLocation(this.connection, this.stockLocationService, ctx, updated);
+            return updated;
         }
 
         const channelCode = input.code || `${input.tenantCode}-${Date.now().toString(36)}`;
@@ -314,6 +320,7 @@ export class TenantService {
 
         // result is now typed as Channel
         await this.assignBuiltInRolesToChannel(ctx, result.id);
+        await ensureChannelStockLocation(this.connection, this.stockLocationService, ctx, result);
 
         // Assign channel to tenant's parent role
         await this.roleService.assignRoleToChannel(ctx, tenant.parentRoleId, result.id);
@@ -563,6 +570,7 @@ export class TenantService {
         }
 
         await this.assignBuiltInRolesToChannel(ctx, newChannel.id);
+        await ensureChannelStockLocation(this.connection, this.stockLocationService, ctx, newChannel);
 
         // Assign to tenant + company roles
         await this.roleService.assignRoleToChannel(ctx, tenant.parentRoleId, newChannel.id);

@@ -18,8 +18,11 @@ import {
   StockLevelService,
   StockLocationService,
   TransactionalConnection,
+  UserInputError,
 } from "@vendure/core";
+import { DEFAULT_CHANNEL_CODE } from "@vendure/common/lib/shared-constants";
 import "../types";
+import { ensureChannelStockLocation } from "./channel-stock-location";
 import { ProductVariantInput, SyncProductInput } from "../types";
 
 @Injectable()
@@ -426,10 +429,26 @@ export class ProductSyncService {
     }
   }
 
+  /**
+   * Sets stock from ERP's stock.level_changed. ERP sends one message per store, naming it by
+   * `erpChannelId`, so only that store's location is written. Without one (the older payload
+   * shapes) every store the variant is assigned to gets the same quantity.
+   */
   async updateStock(
     ctx: RequestContext,
     items: Array<{ sku: string; qty: number }>,
+    erpChannelId?: string,
   ): Promise<void> {
+    let targetChannel: Channel | undefined;
+    if (erpChannelId) {
+      const channel = await this.connection
+        .getRepository(ctx, Channel)
+        .findOne({ where: { customFields: { erpChannelId } } });
+      if (!channel) {
+        throw new UserInputError(`Channel with erpChannelId "${erpChannelId}" not found`);
+      }
+      targetChannel = channel;
+    }
     for (const item of items) {
       const variant = await this.findVariantBySku(ctx, item.sku);
       if (!variant) {
@@ -439,37 +458,31 @@ export class ProductSyncService {
         );
         continue;
       }
-      await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty);
+      await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty, targetChannel);
     }
   }
 
   /**
-   * Updates stock only at the stock location belonging to the variant's assigned channel.
-   *
-   * Flow:
-   * 1. Get variant's channels (exclude default)
-   * 2. Get all stock levels for the variant
-   * 3. For each stock level, load its stock location with channels
-   * 4. If any of the location's channels match the variant's channels (non-default) → update
+   * Sets the variant's stock on hand at each store channel's own stock location
+   * (ensureChannelStockLocation), creating the stock level there when it has none yet.
+   * `onlyChannel` limits it to one store.
    */
   private async updateStockForVariantChannels(
     ctx: RequestContext,
     variantId: ID,
     targetQty: number,
+    onlyChannel?: Channel,
   ): Promise<void> {
-    // 1. Get variant's assigned channels (non-default)
     const variant = await this.productVariantService.findOne(ctx, variantId, [
       "channels",
     ]);
     if (!variant) return;
 
-    const variantChannelIds = new Set(
-      (variant.channels || [])
-        .filter((c) => c.code !== "__default_channel__")
-        .map((c) => String(c.id)),
+    const storeChannels = (variant.channels || []).filter(
+      (c) => c.code !== DEFAULT_CHANNEL_CODE,
     );
 
-    if (variantChannelIds.size === 0) {
+    if (storeChannels.length === 0) {
       // Only in default channel
       await this.productVariantService.update(ctx, [
         { id: variantId, stockOnHand: targetQty },
@@ -481,62 +494,36 @@ export class ProductSyncService {
       return;
     }
 
-    // 2. Get all stock levels for this variant
-    const stockLevels = await this.stockLevelService.getStockLevelsForVariant(
-      ctx,
-      variantId,
-    );
-    let updatedCount = 0;
-
-    for (const level of stockLevels) {
-      // 3. Load stock location with its channels
-      const location = await this.stockLocationService.findOne(
-        ctx,
-        level.stockLocationId,
-      );
-      if (!location) continue;
-
-      // Hydrate channels on the location
-      const locationWithChannels = await this.connection
-        .getRepository(ctx, location.constructor as any)
-        .findOne({ where: { id: location.id }, relations: { channels: true } });
-      if (!locationWithChannels) continue;
-
-      // 4. Check if this location belongs to any of the variant's channels (non-default)
-      const locationChannelIds = (locationWithChannels.channels || []).map(
-        (c: any) => String(c.id),
-      );
-      const isMatchingChannel = locationChannelIds.some((id: string) =>
-        variantChannelIds.has(id),
-      );
-
-      if (isMatchingChannel) {
-        const currentQty = level.stockOnHand ?? 0;
-        const delta = targetQty - currentQty;
-        if (delta !== 0) {
-          await this.stockLevelService.updateStockOnHandForLocation(
-            ctx,
-            variantId,
-            level.stockLocationId,
-            delta,
-          );
-        }
-        updatedCount++;
-      }
-    }
-
-    if (updatedCount > 0) {
-      Logger.info(
-        `Stock updated: variant ${variantId} → ${targetQty} (${updatedCount} location${updatedCount > 1 ? "s" : ""})`,
+    const targetChannels = onlyChannel
+      ? storeChannels.filter((c) => idsAreEqual(c.id, onlyChannel.id))
+      : storeChannels;
+    if (targetChannels.length === 0) {
+      Logger.warn(
+        `Stock update: variant ${variantId} is not assigned to channel ${onlyChannel?.code}, nothing set`,
         "ProductSync",
       );
-    } else {
-      // Fallback
-      await this.productVariantService.update(ctx, [
-        { id: variantId, stockOnHand: targetQty },
-      ]);
+      return;
+    }
+
+    for (const channel of targetChannels) {
+      const location = await ensureChannelStockLocation(
+        this.connection,
+        this.stockLocationService,
+        ctx,
+        channel,
+      );
+      const level = await this.stockLevelService.getStockLevel(ctx, variantId, location.id);
+      const delta = targetQty - level.stockOnHand;
+      if (delta !== 0) {
+        await this.stockLevelService.updateStockOnHandForLocation(
+          ctx,
+          variantId,
+          location.id,
+          delta,
+        );
+      }
       Logger.info(
-        `Stock set (fallback): variant ${variantId} → ${targetQty}`,
+        `Stock updated: variant ${variantId} → ${targetQty} at channel ${channel.code}`,
         "ProductSync",
       );
     }
