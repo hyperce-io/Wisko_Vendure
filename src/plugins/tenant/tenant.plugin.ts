@@ -4,6 +4,7 @@ import { Company } from './entities/company.entity';
 import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
 import { InvoiceSyncService } from './services/invoice-sync.service';
+import { ShippingMethodSyncService } from './services/shipping-method-sync.service';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { OrderEventPublisher } from './events/order-event.publisher';
 import { CustomerEventPublisher } from './events/customer-event.publisher';
@@ -25,6 +26,7 @@ import './types';
         TenantService,
         ProductSyncService,
         InvoiceSyncService,
+        ShippingMethodSyncService,
         TenantChannelHandler,
         OrderEventPublisher,
         CustomerEventPublisher,
