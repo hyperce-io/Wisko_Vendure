@@ -10,6 +10,7 @@ import {
 import { TenantService } from '../services/tenant.service';
 import { ProductSyncService } from '../services/product-sync.service';
 import { InvoiceSyncService } from '../services/invoice-sync.service';
+import { PaymentMethodSyncService } from '../services/payment-method-sync.service';
 import { ShippingMethodSyncService } from '../services/shipping-method-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
@@ -21,6 +22,7 @@ import {
     AssignProductToChannelInput,
     RemoveProductFromChannelInput,
     SyncInvoiceInput,
+    SyncPaymentMethodInput,
     SyncShippingMethodInput,
 } from '../types';
 
@@ -30,6 +32,7 @@ export class RabbitMQMessageHandler {
         private tenantService: TenantService,
         private productSyncService: ProductSyncService,
         private invoiceSyncService: InvoiceSyncService,
+        private paymentMethodSyncService: PaymentMethodSyncService,
         private shippingMethodSyncService: ShippingMethodSyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
@@ -108,6 +111,15 @@ export class RabbitMQMessageHandler {
             // Invoice
             case ROUTING_KEYS.INVOICE_CREATED:
                 await this.handleInvoiceSync(ctx, payload);
+                break;
+
+            // Payment method
+            case ROUTING_KEYS.PAYMENT_METHOD_CREATED:
+            case ROUTING_KEYS.PAYMENT_METHOD_UPDATED:
+                await this.handlePaymentMethodSync(ctx, payload);
+                break;
+            case ROUTING_KEYS.PAYMENT_METHOD_DELETED:
+                await this.handlePaymentMethodDelete(ctx, payload);
                 break;
 
             // Shipping method
@@ -246,10 +258,12 @@ export class RabbitMQMessageHandler {
 
     private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
         const items: Array<{ sku: string; qty: number; warehouse?: string }> = [];
+        let erpChannelId: string | undefined;
 
         // ERPNext format: { item_code, actual_qty, warehouse }
         if (payload.item_code && payload.actual_qty !== undefined) {
             items.push({ sku: payload.item_code, qty: payload.actual_qty, warehouse: payload.warehouse });
+            erpChannelId = payload.erp_channel_id;
         }
         // Simple format: { sku, qty }
         else if (payload.sku && payload.qty !== undefined) {
@@ -276,7 +290,7 @@ export class RabbitMQMessageHandler {
             return;
         }
 
-        await this.productSyncService.updateStock(ctx, items);
+        await this.productSyncService.updateStock(ctx, items, erpChannelId);
     }
 
     // ---- Invoice ----
@@ -295,6 +309,32 @@ export class RabbitMQMessageHandler {
             erpChannelId: payload.erp_channel_id || payload.erpChannelId,
         };
         await this.invoiceSyncService.attachInvoice(ctx, input);
+    }
+
+    // ---- Payment method ----
+
+    private async handlePaymentMethodSync(ctx: RequestContext, payload: any) {
+        if (!payload.erp_channel_id) throw new Error('erp_channel_id is required');
+        if (!payload.code) throw new Error('code is required');
+        if (!payload.name) throw new Error('name is required');
+        const input: SyncPaymentMethodInput = {
+            erpChannelId: payload.erp_channel_id,
+            code: payload.code,
+            name: payload.name,
+            description: payload.description,
+            enabled: payload.enabled !== false,
+            type: payload.type,
+        };
+        await this.paymentMethodSyncService.syncPaymentMethod(ctx, input);
+    }
+
+    private async handlePaymentMethodDelete(ctx: RequestContext, payload: any) {
+        if (!payload.erp_channel_id) throw new Error('erp_channel_id is required');
+        if (!payload.code) throw new Error('code is required');
+        await this.paymentMethodSyncService.removePaymentMethodFromChannel(ctx, {
+            erpChannelId: payload.erp_channel_id,
+            code: payload.code,
+        });
     }
 
     // ---- Shipping method ----

@@ -92,6 +92,7 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'stock.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'invoice.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'shipping_method.*');
+            await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'payment_method.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'sync.*');
 
             await ch.prefetch(1);

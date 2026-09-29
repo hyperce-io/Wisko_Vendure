@@ -30,6 +30,15 @@ export interface SyncChannelInput {
     pricesIncludeTax?: boolean;
 }
 
+export interface SyncPaymentMethodInput {
+    erpChannelId: string;
+    code: string;
+    name: string;
+    description?: string;
+    enabled: boolean;
+    type: string;
+}
+
 export interface SyncShippingMethodInput {
     erpChannelId: string;
     code: string;

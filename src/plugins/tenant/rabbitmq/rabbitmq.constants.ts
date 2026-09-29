@@ -48,6 +48,9 @@ export const ROUTING_KEYS = {
     SHIPPING_METHOD_CREATED: 'shipping_method.created',
     SHIPPING_METHOD_UPDATED: 'shipping_method.updated',
     SHIPPING_METHOD_DELETED: 'shipping_method.deleted',
+    PAYMENT_METHOD_CREATED: 'payment_method.created',
+    PAYMENT_METHOD_UPDATED: 'payment_method.updated',
+    PAYMENT_METHOD_DELETED: 'payment_method.deleted',
 
     SYNC_FULL: 'sync.full',
 } as const;

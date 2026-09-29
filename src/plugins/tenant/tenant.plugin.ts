@@ -5,6 +5,8 @@ import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
 import { InvoiceSyncService } from './services/invoice-sync.service';
 import { ShippingMethodSyncService } from './services/shipping-method-sync.service';
+import { PaymentMethodSyncService } from './services/payment-method-sync.service';
+import { wiskoErpPaymentHandler } from './payment/wisko-erp-payment-handler';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
 import { OrderEventPublisher } from './events/order-event.publisher';
 import { CustomerEventPublisher } from './events/customer-event.publisher';
@@ -27,6 +29,7 @@ import './types';
         ProductSyncService,
         InvoiceSyncService,
         ShippingMethodSyncService,
+        PaymentMethodSyncService,
         TenantChannelHandler,
         OrderEventPublisher,
         CustomerEventPublisher,
@@ -45,6 +48,7 @@ import './types';
     },
     dashboard: './dashboard/index.tsx',
     configuration: (config: RuntimeVendureConfig) => {
+        config.paymentOptions.paymentMethodHandlers.push(wiskoErpPaymentHandler);
         config.customFields.Channel.push(
             {
                 name: 'tenant',
