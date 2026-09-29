@@ -10,6 +10,7 @@ import {
 import { TenantService } from '../services/tenant.service';
 import { ProductSyncService } from '../services/product-sync.service';
 import { InvoiceSyncService } from '../services/invoice-sync.service';
+import { PaymentMethodSyncService } from '../services/payment-method-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
     SyncCompanyInput,
@@ -20,6 +21,7 @@ import {
     AssignProductToChannelInput,
     RemoveProductFromChannelInput,
     SyncInvoiceInput,
+    SyncPaymentMethodInput,
 } from '../types';
 
 @Injectable()
@@ -28,6 +30,7 @@ export class RabbitMQMessageHandler {
         private tenantService: TenantService,
         private productSyncService: ProductSyncService,
         private invoiceSyncService: InvoiceSyncService,
+        private paymentMethodSyncService: PaymentMethodSyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
         private configService: ConfigService,
@@ -105,6 +108,15 @@ export class RabbitMQMessageHandler {
             // Invoice
             case ROUTING_KEYS.INVOICE_CREATED:
                 await this.handleInvoiceSync(ctx, payload);
+                break;
+
+            // Payment method
+            case ROUTING_KEYS.PAYMENT_METHOD_CREATED:
+            case ROUTING_KEYS.PAYMENT_METHOD_UPDATED:
+                await this.handlePaymentMethodSync(ctx, payload);
+                break;
+            case ROUTING_KEYS.PAYMENT_METHOD_DELETED:
+                await this.handlePaymentMethodDelete(ctx, payload);
                 break;
 
             // Full sync
@@ -285,6 +297,32 @@ export class RabbitMQMessageHandler {
             erpChannelId: payload.erp_channel_id || payload.erpChannelId,
         };
         await this.invoiceSyncService.attachInvoice(ctx, input);
+    }
+
+    // ---- Payment method ----
+
+    private async handlePaymentMethodSync(ctx: RequestContext, payload: any) {
+        if (!payload.erp_channel_id) throw new Error('erp_channel_id is required');
+        if (!payload.code) throw new Error('code is required');
+        if (!payload.name) throw new Error('name is required');
+        const input: SyncPaymentMethodInput = {
+            erpChannelId: payload.erp_channel_id,
+            code: payload.code,
+            name: payload.name,
+            description: payload.description,
+            enabled: payload.enabled !== false,
+            type: payload.type,
+        };
+        await this.paymentMethodSyncService.syncPaymentMethod(ctx, input);
+    }
+
+    private async handlePaymentMethodDelete(ctx: RequestContext, payload: any) {
+        if (!payload.erp_channel_id) throw new Error('erp_channel_id is required');
+        if (!payload.code) throw new Error('code is required');
+        await this.paymentMethodSyncService.removePaymentMethodFromChannel(ctx, {
+            erpChannelId: payload.erp_channel_id,
+            code: payload.code,
+        });
     }
 
     // ---- Full Sync ----
