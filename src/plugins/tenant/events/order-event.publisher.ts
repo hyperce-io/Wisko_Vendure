@@ -8,8 +8,10 @@ import {
     RequestContext,
     Order,
     EntityHydrator,
+    ShippingMethod,
     TransactionalConnection,
 } from '@vendure/core';
+import { In } from 'typeorm';
 import { RabbitMQPublisher } from '../rabbitmq/rabbitmq.publisher';
 import { ROUTING_KEYS } from '../rabbitmq/rabbitmq.constants';
 import { resolveErpChannel } from './erp-channel.resolver';
@@ -85,6 +87,20 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
         }
 
         const channel = await resolveErpChannel(this.connection, ctx, order.channels);
+
+        // Loaded by id rather than hydrated: hydrating 'shippingLines.shippingMethod' sent
+        // EntityHydrator's mergeDeep into a runaway merge that pinned the server at 100% CPU.
+        const shippingMethodIds = (order.shippingLines || []).map(sl => sl.shippingMethodId).filter(id => id != null);
+        const shippingMethodCodes = new Map(
+            shippingMethodIds.length
+                ? (
+                      await this.connection.getRepository(ctx, ShippingMethod).find({
+                          where: { id: In(shippingMethodIds) },
+                          select: { id: true, code: true },
+                      })
+                  ).map(method => [String(method.id), method.code])
+                : [],
+        );
 
         return {
             event: `order.${this.stateToEventName(toState)}`,
@@ -164,6 +180,7 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                 // Shipping
                 shippingLines: (order.shippingLines || []).map(sl => ({
                     shippingMethodId: sl.shippingMethodId ? String(sl.shippingMethodId) : null,
+                    shippingMethodCode: sl.shippingMethodId ? shippingMethodCodes.get(String(sl.shippingMethodId)) ?? null : null,
                     price: sl.listPrice,
                     priceWithTax: sl.listPriceIncludesTax ? sl.listPrice : Math.round(sl.listPrice * 1.18),
                 })),

@@ -4,6 +4,7 @@ import { Company } from './entities/company.entity';
 import { TenantService } from './services/tenant.service';
 import { ProductSyncService } from './services/product-sync.service';
 import { InvoiceSyncService } from './services/invoice-sync.service';
+import { ShippingMethodSyncService } from './services/shipping-method-sync.service';
 import { PaymentMethodSyncService } from './services/payment-method-sync.service';
 import { wiskoErpPaymentHandler } from './payment/wisko-erp-payment-handler';
 import { TenantChannelHandler } from './events/tenant-channel.handler';
@@ -27,6 +28,7 @@ import './types';
         TenantService,
         ProductSyncService,
         InvoiceSyncService,
+        ShippingMethodSyncService,
         PaymentMethodSyncService,
         TenantChannelHandler,
         OrderEventPublisher,

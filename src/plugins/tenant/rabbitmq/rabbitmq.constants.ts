@@ -45,6 +45,9 @@ export const ROUTING_KEYS = {
     // order events to this same exchange, so binding `order.*` would feed them back in.
     INVOICE_CREATED: 'invoice.created',
 
+    SHIPPING_METHOD_CREATED: 'shipping_method.created',
+    SHIPPING_METHOD_UPDATED: 'shipping_method.updated',
+    SHIPPING_METHOD_DELETED: 'shipping_method.deleted',
     PAYMENT_METHOD_CREATED: 'payment_method.created',
     PAYMENT_METHOD_UPDATED: 'payment_method.updated',
     PAYMENT_METHOD_DELETED: 'payment_method.deleted',
