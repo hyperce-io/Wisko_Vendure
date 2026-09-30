@@ -24,6 +24,7 @@ import { DEFAULT_CHANNEL_CODE } from "@vendure/common/lib/shared-constants";
 import "../types";
 import { ensureChannelStockLocation } from "./channel-stock-location";
 import { ProductVariantInput, SyncProductInput } from "../types";
+import { TaxCategorySyncService } from "./tax-category-sync.service";
 
 @Injectable()
 export class ProductSyncService {
@@ -36,6 +37,7 @@ export class ProductSyncService {
     private stockLocationService: StockLocationService,
     private productOptionGroupService: ProductOptionGroupService,
     private productOptionService: ProductOptionService,
+    private taxCategorySyncService: TaxCategorySyncService,
   ) {}
 
   /**
@@ -80,6 +82,7 @@ export class ProductSyncService {
           variantIdsBySku,
           channels,
         );
+        await this.ensureVariantTaxRates(txCtx, variants, channels);
       }
 
       for (const variantInput of variants) {
@@ -175,6 +178,14 @@ export class ProductSyncService {
       const existing = existingVariants.find(
         (variant) => variant.sku === variantInput.sku,
       );
+      // No ERP category/weight means "keep what Vendure has", the same as a missing price.
+      const taxCategoryId = variantInput.taxCategory
+        ? (await this.taxCategorySyncService.findOrCreate(ctx, variantInput.taxCategory)).id
+        : undefined;
+      const customFields =
+        variantInput.weight !== undefined
+          ? { weight: variantInput.weight }
+          : undefined;
 
       if (existing) {
         const currentOptionIds = existing.options.map((option) => option.id);
@@ -194,6 +205,8 @@ export class ProductSyncService {
             trackInventory,
             enabled: variantInput.enabled,
             translations,
+            taxCategoryId,
+            customFields,
           },
         ]);
         variantIdsBySku.set(variantInput.sku, existing.id);
@@ -209,6 +222,8 @@ export class ProductSyncService {
             trackInventory,
             enabled: variantInput.enabled !== false,
             translations,
+            taxCategoryId,
+            customFields,
           },
         ]);
         variantIdsBySku.set(variantInput.sku, created.id);
@@ -390,6 +405,30 @@ export class ProductSyncService {
       }
     }
     return assigned;
+  }
+
+  /**
+   * Makes each channel's tax zone charge every variant's tax category at the variant's ERP rate.
+   * tax_category.updated does the same when the ERP template is saved; this covers a channel
+   * created after that, and a message that never arrived.
+   */
+  private async ensureVariantTaxRates(
+    ctx: RequestContext,
+    variants: ProductVariantInput[],
+    channels: Channel[],
+  ): Promise<void> {
+    const ratesByCategory = new Map<string, number>();
+    for (const variantInput of variants) {
+      if (variantInput.taxCategory && variantInput.taxRate != null) {
+        ratesByCategory.set(variantInput.taxCategory, variantInput.taxRate);
+      }
+    }
+    for (const [categoryName, rate] of ratesByCategory) {
+      const category = await this.taxCategorySyncService.findOrCreate(ctx, categoryName);
+      for (const channel of channels) {
+        await this.taxCategorySyncService.ensureRate(ctx, category, channel, rate);
+      }
+    }
   }
 
   async removeFromChannels(

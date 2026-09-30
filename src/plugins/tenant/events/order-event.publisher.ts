@@ -220,6 +220,11 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
 
                 // Tax summary
                 taxSummary: order.taxSummary || [],
+
+                // The GSTIN entered at checkout; ERP puts it on this order's invoice.
+                customFields: {
+                    gstin: order.customFields.gstin ?? null,
+                },
             },
         };
     }

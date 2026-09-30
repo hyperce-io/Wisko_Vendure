@@ -5,3 +5,4 @@ static/assets
 static/email/test-emails
 .vendure/
 .env
+ERP_INTEGRATION_API.md
