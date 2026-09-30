@@ -12,6 +12,7 @@ import { ProductSyncService } from '../services/product-sync.service';
 import { InvoiceSyncService } from '../services/invoice-sync.service';
 import { PaymentMethodSyncService } from '../services/payment-method-sync.service';
 import { ShippingMethodSyncService } from '../services/shipping-method-sync.service';
+import { TaxCategorySyncService } from '../services/tax-category-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
     SyncCompanyInput,
@@ -24,6 +25,7 @@ import {
     SyncInvoiceInput,
     SyncPaymentMethodInput,
     SyncShippingMethodInput,
+    SyncTaxCategoryInput,
 } from '../types';
 
 @Injectable()
@@ -34,6 +36,7 @@ export class RabbitMQMessageHandler {
         private invoiceSyncService: InvoiceSyncService,
         private paymentMethodSyncService: PaymentMethodSyncService,
         private shippingMethodSyncService: ShippingMethodSyncService,
+        private taxCategorySyncService: TaxCategorySyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
         private configService: ConfigService,
@@ -129,6 +132,11 @@ export class RabbitMQMessageHandler {
                 break;
             case ROUTING_KEYS.SHIPPING_METHOD_DELETED:
                 await this.handleShippingMethodDelete(ctx, payload);
+                break;
+
+            // Tax category
+            case ROUTING_KEYS.TAX_CATEGORY_UPDATED:
+                await this.handleTaxCategorySync(ctx, payload);
                 break;
 
             // Full sync
@@ -363,6 +371,20 @@ export class RabbitMQMessageHandler {
             erpChannelId: payload.erp_channel_id,
             code: payload.code,
         });
+    }
+
+    // ---- Tax category ----
+
+    private async handleTaxCategorySync(ctx: RequestContext, payload: any) {
+        if (!payload.name) throw new Error('name is required');
+        if (typeof payload.rate !== 'number') throw new Error('rate must be a number');
+        if (!Array.isArray(payload.erp_channel_ids)) throw new Error('erp_channel_ids must be an array');
+        const input: SyncTaxCategoryInput = {
+            name: payload.name,
+            rate: payload.rate,
+            erpChannelIds: payload.erp_channel_ids,
+        };
+        await this.taxCategorySyncService.syncTaxCategory(ctx, input);
     }
 
     // ---- Full Sync ----

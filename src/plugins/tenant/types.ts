@@ -49,6 +49,13 @@ export interface SyncShippingMethodInput {
     shippingAmount: number;
 }
 
+/** tax_category.updated: an ERP Item Tax Template and the store channels its company sells in. */
+export interface SyncTaxCategoryInput {
+    name: string;
+    rate: number;
+    erpChannelIds: string[];
+}
+
 export interface SyncInvoiceInput {
     orderCode: string;
     fileUrl: string;
@@ -130,6 +137,12 @@ export interface ProductVariantInput {
     stockOnHand?: number;
     trackInventory?: boolean;
     enabled?: boolean;
+    /** Kilograms per unit, from the ERP Item's weight. */
+    weight?: number | null;
+    /** The ERP Item Tax Template's title, which is the Vendure tax category's name. */
+    taxCategory?: string | null;
+    /** The tax rate (%) that template charges. */
+    taxRate?: number | null;
 }
 
 export interface SyncProductInput {
@@ -178,5 +191,9 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     interface CustomOrderFields {
         erpInvoice: Asset | null;
         erpInvoiceKey: string | null;
+        gstin: string | null;
+    }
+    interface CustomProductVariantFields {
+        weight: number | null;
     }
 }

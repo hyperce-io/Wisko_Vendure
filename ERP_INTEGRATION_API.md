@@ -39,6 +39,7 @@ DLQ:       wisko.sync.vendure.dlq
 | `product.assigned` | Assign a product to channel(s) |
 | `product.removed` | Remove a product from channel(s) |
 | `invoice.created` | Attach an ERP-generated invoice PDF to an order |
+| `tax_category.updated` | Create a tax category named after an ERP Item Tax Template and set its rate in each store channel's tax zone |
 | `sync.full` | Full org sync (company + tenants + channels + products in one call) |
 
 ---
@@ -450,6 +451,26 @@ Everything in one message — company + tenants + channels + products.
 | `stockOnHand` | number | No | Default: 0 |
 | `trackInventory` | boolean | No | Default: false |
 | `enabled` | boolean | No | Default: true |
+| `weight` | number \| null | No | Kilograms per unit, from the ERP Item's weight. Stored in the variant's `weight` custom field. Omitted keeps the current value |
+| `taxCategory` | string \| null | No | The ERP Item Tax Template's title ("GST 18%", "Nepal Tax"); the variant is put in the Vendure tax category of that name (created if missing). Omitted keeps the current category |
+| `taxRate` | number \| null | No | The % that template charges; each channel the product is assigned to gets it as the category's tax rate in its default tax zone |
+
+---
+
+### Tax Category (`tax_category.updated`)
+
+Sent when an ERP Item Tax Template is created or changed. Categories are platform-wide; the rate is
+set per tax zone, for each listed store channel that exists in Vendure (a missing one gets it on its
+first product sync).
+
+```json
+{
+  "name": "GST 18%",
+  "rate": 18,
+  "erp_channel_ids": ["a1b2c3d4e5f6a7b8"],
+  "idempotency_key": "erpnext:tax-category:GST 18% - BYD"
+}
+```
 
 ---
 

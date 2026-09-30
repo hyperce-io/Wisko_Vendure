@@ -52,5 +52,7 @@ export const ROUTING_KEYS = {
     PAYMENT_METHOD_UPDATED: 'payment_method.updated',
     PAYMENT_METHOD_DELETED: 'payment_method.deleted',
 
+    TAX_CATEGORY_UPDATED: 'tax_category.updated',
+
     SYNC_FULL: 'sync.full',
 } as const;
