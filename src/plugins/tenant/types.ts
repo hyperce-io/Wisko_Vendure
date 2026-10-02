@@ -30,6 +30,17 @@ export interface SyncChannelInput {
     pricesIncludeTax?: boolean;
 }
 
+/** A customer of a deal won in ERP: who they are, which store, and which customer group. */
+export interface SyncB2bCustomerInput {
+    erpChannelId: string;
+    erpCustomerId: string;
+    emailAddress: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber?: string | null;
+    customerGroup: string;
+}
+
 export interface SyncPaymentMethodInput {
     erpChannelId: string;
     code: string;
@@ -192,6 +203,9 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     interface CustomChannelFields {
         tenant: Tenant | null;
         erpChannelId: string | null;
+    }
+    interface CustomCustomerFields {
+        erpCustomerId: string | null;
     }
     interface CustomAdministratorFields {
         tenant: Tenant | null;
