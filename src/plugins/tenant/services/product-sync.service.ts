@@ -325,8 +325,9 @@ export class ProductSyncService {
   }
 
   /**
-   * Sets each variant's price in each channel from the ERP `prices` entry in that channel's own
-   * currency. A channel with no ERP price in its currency keeps the price the assignment copied.
+   * Sets each variant's price in each channel: the channel's own ERP price (`channelPrices`, a
+   * store-level price) when it has one in its currency, else the ERP `prices` entry in that
+   * channel's currency. A channel with neither keeps the price the assignment copied.
    */
   private async applyChannelPrices(
     ctx: RequestContext,
@@ -336,11 +337,17 @@ export class ProductSyncService {
   ): Promise<void> {
     for (const variantInput of variants) {
       const variantId = variantIdsBySku.get(variantInput.sku);
-      if (!variantId || !variantInput.prices?.length) continue;
+      if (!variantId || (!variantInput.prices?.length && !variantInput.channelPrices?.length)) continue;
       for (const channel of channels) {
-        const channelPrice = variantInput.prices.find(
-          (price) => price.currencyCode === channel.defaultCurrencyCode,
-        );
+        const channelPrice =
+          variantInput.channelPrices?.find(
+            (price) =>
+              price.channelCode === channel.code &&
+              price.currencyCode === channel.defaultCurrencyCode,
+          ) ??
+          variantInput.prices?.find(
+            (price) => price.currencyCode === channel.defaultCurrencyCode,
+          );
         if (!channelPrice) continue;
         await this.productVariantService.createOrUpdateProductVariantPrice(
           ctx,
@@ -473,9 +480,16 @@ export class ProductSyncService {
    * `erpChannelId`, so only that store's location is written. Without one (the older payload
    * shapes) every store the variant is assigned to gets the same quantity.
    */
+  /**
+   * Sets each SKU's stock in one store channel (or all of them) to what ERP reports: `qty` as stock
+   * on hand and, when ERP sends it, `reserved` as stock allocated. ERP is the system of record for
+   * inventory and its reserved quantity already covers this store's open orders, so allocation is
+   * set to ERP's number rather than kept as a separate Vendure tally that a shipment in ERP never
+   * clears (which subtracted the same units twice and showed the store out of stock).
+   */
   async updateStock(
     ctx: RequestContext,
-    items: Array<{ sku: string; qty: number }>,
+    items: Array<{ sku: string; qty: number; reserved?: number }>,
     erpChannelId?: string,
   ): Promise<void> {
     let targetChannel: Channel | undefined;
@@ -497,20 +511,21 @@ export class ProductSyncService {
         );
         continue;
       }
-      await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty, targetChannel);
+      await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty, targetChannel, item.reserved);
     }
   }
 
   /**
-   * Sets the variant's stock on hand at each store channel's own stock location
-   * (ensureChannelStockLocation), creating the stock level there when it has none yet.
-   * `onlyChannel` limits it to one store.
+   * Sets the variant's stock on hand, and its allocated stock when `targetAllocated` is given, at
+   * each store channel's own stock location (ensureChannelStockLocation), creating the stock level
+   * there when it has none yet. `onlyChannel` limits it to one store.
    */
   private async updateStockForVariantChannels(
     ctx: RequestContext,
     variantId: ID,
     targetQty: number,
     onlyChannel?: Channel,
+    targetAllocated?: number,
   ): Promise<void> {
     const variant = await this.productVariantService.findOne(ctx, variantId, [
       "channels",
@@ -561,8 +576,21 @@ export class ProductSyncService {
           delta,
         );
       }
+      if (targetAllocated !== undefined) {
+        const allocatedDelta = targetAllocated - level.stockAllocated;
+        if (allocatedDelta !== 0) {
+          await this.stockLevelService.updateStockAllocatedForLocation(
+            ctx,
+            variantId,
+            location.id,
+            allocatedDelta,
+          );
+        }
+      }
       Logger.info(
-        `Stock updated: variant ${variantId} → ${targetQty} at channel ${channel.code}`,
+        `Stock updated: variant ${variantId} → ${targetQty} on hand` +
+          (targetAllocated !== undefined ? `, ${targetAllocated} allocated` : "") +
+          ` at channel ${channel.code}`,
         "ProductSync",
       );
     }
