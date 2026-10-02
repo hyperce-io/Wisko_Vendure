@@ -13,6 +13,7 @@ import { InvoiceSyncService } from '../services/invoice-sync.service';
 import { PaymentMethodSyncService } from '../services/payment-method-sync.service';
 import { ShippingMethodSyncService } from '../services/shipping-method-sync.service';
 import { TaxCategorySyncService } from '../services/tax-category-sync.service';
+import { B2bCustomerSyncService } from '../services/b2b-customer-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
     SyncCompanyInput,
@@ -26,6 +27,7 @@ import {
     SyncPaymentMethodInput,
     SyncShippingMethodInput,
     SyncTaxCategoryInput,
+    SyncB2bCustomerInput,
 } from '../types';
 
 @Injectable()
@@ -37,6 +39,7 @@ export class RabbitMQMessageHandler {
         private paymentMethodSyncService: PaymentMethodSyncService,
         private shippingMethodSyncService: ShippingMethodSyncService,
         private taxCategorySyncService: TaxCategorySyncService,
+        private b2bCustomerSyncService: B2bCustomerSyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
         private configService: ConfigService,
@@ -137,6 +140,11 @@ export class RabbitMQMessageHandler {
             // Tax category
             case ROUTING_KEYS.TAX_CATEGORY_UPDATED:
                 await this.handleTaxCategorySync(ctx, payload);
+                break;
+
+            // B2B customer
+            case ROUTING_KEYS.B2B_CUSTOMER_UPSERTED:
+                await this.handleB2bCustomerSync(ctx, payload);
                 break;
 
             // Full sync
@@ -322,6 +330,25 @@ export class RabbitMQMessageHandler {
             erpChannelId: payload.erp_channel_id || payload.erpChannelId,
         };
         await this.invoiceSyncService.attachInvoice(ctx, input);
+    }
+
+    // ---- B2B customer ----
+
+    private async handleB2bCustomerSync(ctx: RequestContext, payload: any) {
+        const customer = payload.customer || {};
+        if (!payload.erp_channel_id) throw new Error('erp_channel_id is required');
+        if (!customer.emailAddress) throw new Error('customer.emailAddress is required');
+        if (!payload.customer_group) throw new Error('customer_group is required');
+        const input: SyncB2bCustomerInput = {
+            erpChannelId: payload.erp_channel_id,
+            erpCustomerId: payload.erp_customer_id,
+            emailAddress: customer.emailAddress,
+            firstName: customer.firstName || customer.emailAddress,
+            lastName: customer.lastName || '',
+            phoneNumber: customer.phoneNumber,
+            customerGroup: payload.customer_group,
+        };
+        await this.b2bCustomerSyncService.syncB2bCustomer(ctx, input);
     }
 
     // ---- Payment method ----

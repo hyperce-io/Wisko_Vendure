@@ -1,10 +1,10 @@
 import {
-    Asset,
-    LanguageCode,
-    OrderLevelTaxCalculationStrategy,
-    PluginCommonModule,
-    RuntimeVendureConfig,
-    VendurePlugin,
+  Asset,
+  LanguageCode,
+  OrderLevelTaxCalculationStrategy,
+  PluginCommonModule,
+  RuntimeVendureConfig,
+  VendurePlugin,
 } from "@vendure/core";
 import { adminApiExtensions } from "./api/api-extensions";
 import { shopApiExtensions } from "./api/shop-api-extensions";
@@ -20,6 +20,7 @@ import { wiskoErpPaymentHandler } from "./payment/wisko-erp-payment-handler";
 import { RabbitMQConsumer } from "./rabbitmq/rabbitmq.consumer";
 import { RabbitMQMessageHandler } from "./rabbitmq/rabbitmq.handler";
 import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
+import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
 import { ProductSyncService } from "./services/product-sync.service";
@@ -40,6 +41,7 @@ import "./types";
     ShippingMethodSyncService,
     PaymentMethodSyncService,
     TaxCategorySyncService,
+    B2bCustomerSyncService,
     TenantChannelHandler,
     OrderEventPublisher,
     CustomerEventPublisher,
@@ -118,6 +120,13 @@ import "./types";
       nullable: true,
       readonly: true,
       label: [{ languageCode: LanguageCode.en, value: "Weight (kg)" }],
+    });
+    config.customFields.Customer.push({
+      name: "erpCustomerId",
+      type: "string",
+      nullable: true,
+      readonly: true,
+      label: [{ languageCode: LanguageCode.en, value: "ERP Customer ID" }],
     });
     config.customFields.Administrator.push({
       name: "tenant",
