@@ -128,11 +128,19 @@ export interface ProductVariantPriceInput {
     amount: number;
 }
 
+/** One store channel's own selling price, in minor units, which wins over `prices` in that channel. */
+export interface ProductVariantChannelPriceInput {
+    channelCode: string;
+    currencyCode: CurrencyCode;
+    amount: number;
+}
+
 export interface ProductVariantInput {
     sku: string;
     name: string;
     price: number | null;
     prices?: ProductVariantPriceInput[];
+    channelPrices?: ProductVariantChannelPriceInput[];
     options?: ProductVariantOptionInput[];
     stockOnHand?: number;
     trackInventory?: boolean;

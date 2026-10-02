@@ -265,12 +265,17 @@ export class RabbitMQMessageHandler {
     // ---- Stock ----
 
     private async handleStockLevelChanged(ctx: RequestContext, payload: any) {
-        const items: Array<{ sku: string; qty: number; warehouse?: string }> = [];
+        const items: Array<{ sku: string; qty: number; reserved?: number; warehouse?: string }> = [];
         let erpChannelId: string | undefined;
 
-        // ERPNext format: { item_code, actual_qty, warehouse }
+        // ERPNext format: { item_code, actual_qty, reserved_qty, warehouse }
         if (payload.item_code && payload.actual_qty !== undefined) {
-            items.push({ sku: payload.item_code, qty: payload.actual_qty, warehouse: payload.warehouse });
+            items.push({
+                sku: payload.item_code,
+                qty: payload.actual_qty,
+                reserved: payload.reserved_qty,
+                warehouse: payload.warehouse,
+            });
             erpChannelId = payload.erp_channel_id;
         }
         // Simple format: { sku, qty }
