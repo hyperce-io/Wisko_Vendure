@@ -116,6 +116,8 @@ export class RabbitMQMessageHandler {
 
             // Invoice
             case ROUTING_KEYS.INVOICE_CREATED:
+            case ROUTING_KEYS.INVOICE_STATUS_CHANGED:
+            case ROUTING_KEYS.INVOICE_CANCELLED:
                 await this.handleInvoiceSync(ctx, payload);
                 break;
 
@@ -319,17 +321,18 @@ export class RabbitMQMessageHandler {
     private async handleInvoiceSync(ctx: RequestContext, payload: any) {
         // ERPNext sends snake_case; accept camelCase too so the contract is forgiving.
         const orderCode = payload.vendure_order_code || payload.vendureOrderCode || payload.orderCode;
-        const fileUrl = payload.fileUrl || payload.file_url;
         if (!orderCode) throw new Error('vendure_order_code is required');
-        if (!fileUrl) throw new Error('fileUrl is required');
 
         const input: SyncInvoiceInput = {
             orderCode,
-            fileUrl,
+            fileUrl: payload.fileUrl || payload.file_url,
+            invoiceNumber: payload.invoice_number || payload.invoiceNumber,
+            invoiceDate: payload.invoice_date || payload.invoiceDate,
+            status: payload.status,
             idempotencyKey: payload.idempotency_key || payload.idempotencyKey,
             erpChannelId: payload.erp_channel_id || payload.erpChannelId,
         };
-        await this.invoiceSyncService.attachInvoice(ctx, input);
+        await this.invoiceSyncService.syncInvoice(ctx, input);
     }
 
     // ---- B2B customer ----

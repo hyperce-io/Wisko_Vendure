@@ -26,14 +26,17 @@ export class InvoiceSyncService {
     ) {}
 
     /**
-     * Attaches an ERP-generated invoice PDF to an Order.
+     * Stores an ERP invoice's number, date and status on its Order, and attaches
+     * the invoice PDF when the message carries one (invoice.created only;
+     * invoice.status_changed and invoice.cancelled carry just the status).
+     * A field the message does not carry keeps its current value.
      *
      * ERP sends a time-limited Azure SAS link (`?se=<expiry>`) into a private
      * container, so the URL is useless once it expires — a month, in the samples
      * we were sent. The PDF is therefore downloaded while the link is still
      * signed and stored as a Vendure Asset; only the permanent asset is kept.
      */
-    async attachInvoice(ctx: RequestContext, input: SyncInvoiceInput): Promise<void> {
+    async syncInvoice(ctx: RequestContext, input: SyncInvoiceInput): Promise<void> {
         const order = await this.orderService.findOneByCode(ctx, input.orderCode);
         if (!order) {
             // Thrown, not swallowed: the consumer nacks and the message lands on
@@ -41,31 +44,28 @@ export class InvoiceSyncService {
             throw new Error(`Order "${input.orderCode}" not found`);
         }
 
-        // ERP re-sends on retry; the idempotency key is what makes that safe.
-        if (input.idempotencyKey && order.customFields?.erpInvoiceKey === input.idempotencyKey) {
-            Logger.info(
-                `Invoice already attached to order ${input.orderCode} (${input.idempotencyKey}), skipping`,
-                'InvoiceSync',
-            );
-            return;
+        const customFields = { ...order.customFields };
+        if (input.invoiceNumber) customFields.erpInvoiceNumber = input.invoiceNumber;
+        if (input.invoiceDate) customFields.erpInvoiceDate = new Date(input.invoiceDate);
+        if (input.status) customFields.erpInvoiceStatus = input.status;
+
+        // ERP re-sends on retry; the idempotency key is what makes skipping the re-download safe.
+        const isPdfAttached =
+            !!input.idempotencyKey && order.customFields?.erpInvoiceKey === input.idempotencyKey;
+        if (input.fileUrl && !isPdfAttached) {
+            const asset = await this.downloadAsAsset(ctx, input.fileUrl);
+            customFields.erpInvoice = asset;
+            customFields.erpInvoiceKey = input.idempotencyKey ?? null;
+            Logger.info(`Attached invoice asset ${asset.id} to order ${input.orderCode}`, 'InvoiceSync');
         }
 
-        const asset = await this.downloadAsAsset(ctx, input.fileUrl);
-
         await this.connection.getRepository(ctx, Order).save(
-            {
-                id: order.id,
-                customFields: {
-                    ...order.customFields,
-                    erpInvoice: asset,
-                    erpInvoiceKey: input.idempotencyKey ?? null,
-                },
-            } as any,
+            { id: order.id, customFields } as any,
             { reload: false },
         );
 
         Logger.info(
-            `Attached invoice asset ${asset.id} to order ${input.orderCode}`,
+            `Order ${input.orderCode}: ERP invoice ${customFields.erpInvoiceNumber} is ${customFields.erpInvoiceStatus}`,
             'InvoiceSync',
         );
     }

@@ -103,6 +103,29 @@ import "./types";
         internal: true,
       },
       {
+        // The ERP Sales Invoice number, date and status (Unpaid, Paid, Cancelled...),
+        // set from invoice.* messages. See InvoiceSyncService.
+        name: "erpInvoiceNumber",
+        type: "string",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Number" }],
+      },
+      {
+        name: "erpInvoiceDate",
+        type: "datetime",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Date" }],
+      },
+      {
+        name: "erpInvoiceStatus",
+        type: "string",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Status" }],
+      },
+      {
         // Optional GSTIN a customer enters at checkout for a GST invoice. ERP puts it on
         // this order's invoice only, and takes the place of supply from its state.
         name: "gstin",

@@ -69,7 +69,10 @@ export interface SyncTaxCategoryInput {
 
 export interface SyncInvoiceInput {
     orderCode: string;
-    fileUrl: string;
+    fileUrl?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    status?: string;
     idempotencyKey?: string;
     erpChannelId?: string;
 }
@@ -213,6 +216,9 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     interface CustomOrderFields {
         erpInvoice: Asset | null;
         erpInvoiceKey: string | null;
+        erpInvoiceNumber: string | null;
+        erpInvoiceDate: Date | null;
+        erpInvoiceStatus: string | null;
         gstin: string | null;
     }
     interface CustomProductVariantFields {
