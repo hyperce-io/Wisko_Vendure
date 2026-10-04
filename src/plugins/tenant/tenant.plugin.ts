@@ -93,7 +93,7 @@ import "./types";
         readonly: true,
         label: [{ languageCode: "en" as any, value: "ERP Invoice" }],
         // Rendered as a download link; see ErpInvoiceLink in the dashboard extension.
-        ui: { component: "wisko.erp-invoice-link" },
+        ui: { component: "wisko.erp-invoice-link", tab: "Invoice" },
       },
       {
         // Dedupe key from ERP, so a redelivered message is not re-downloaded.
@@ -110,6 +110,7 @@ import "./types";
         nullable: true,
         readonly: true,
         label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Number" }],
+        ui: { tab: "Invoice" },
       },
       {
         name: "erpInvoiceDate",
@@ -117,6 +118,8 @@ import "./types";
         nullable: true,
         readonly: true,
         label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Date" }],
+        // Date only; see ErpInvoiceDate in the dashboard extension.
+        ui: { component: "wisko.erp-invoice-date", tab: "Invoice" },
       },
       {
         name: "erpInvoiceStatus",
@@ -124,6 +127,7 @@ import "./types";
         nullable: true,
         readonly: true,
         label: [{ languageCode: LanguageCode.en, value: "ERP Invoice Status" }],
+        ui: { tab: "Invoice" },
       },
       {
         // Optional GSTIN a customer enters at checkout for a GST invoice. ERP puts it on
