@@ -361,11 +361,30 @@ const ErpInvoiceLink: DashboardFormComponent = () => {
     );
 };
 
+/**
+ * ERP sends the invoice's posting date with no time, stored as midnight UTC. Shown as that UTC
+ * date, so the browser's time zone neither adds a made-up time (05:45 AM in Nepal) nor shifts
+ * the day.
+ */
+const ErpInvoiceDate: DashboardFormComponent = ({ value }) => {
+    if (!value) {
+        return <p className="text-sm text-muted-foreground">No invoice received from ERP yet.</p>;
+    }
+    return (
+        <p className="text-sm">
+            {new Date(value).toLocaleDateString(undefined, { timeZone: 'UTC', dateStyle: 'medium' })}
+        </p>
+    );
+};
+
 // ---- Register Extension ----
 
 defineDashboardExtension({
     customFormComponents: {
-        customFields: [{ id: 'wisko.erp-invoice-link', component: ErpInvoiceLink }],
+        customFields: [
+            { id: 'wisko.erp-invoice-link', component: ErpInvoiceLink },
+            { id: 'wisko.erp-invoice-date', component: ErpInvoiceDate },
+        ],
     },
     routes: [{
         path: '/organizations',

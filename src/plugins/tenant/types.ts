@@ -1,227 +1,227 @@
-import { Channel, Administrator, Asset, CurrencyCode } from '@vendure/core';
-import { Company } from './entities/company.entity';
-import { Tenant } from './entities/tenant.entity';
+import { Administrator, Asset, Channel, CurrencyCode } from "@vendure/core";
+import { Company } from "./entities/company.entity";
+import { Tenant } from "./entities/tenant.entity";
 
 // ---- Sync input types (used by RabbitMQ handler + service) ----
 
 export interface SyncCompanyInput {
-    code: string;
-    name?: string;
-    enabled?: boolean;
-    admin?: AdminInput;
+  code: string;
+  name?: string;
+  enabled?: boolean;
+  admin?: AdminInput;
 }
 
 export interface SyncTenantInput {
-    companyCode: string;
-    code: string;
-    name?: string;
-    enabled?: boolean;
-    admin?: AdminInput;
+  companyCode: string;
+  code: string;
+  name?: string;
+  enabled?: boolean;
+  admin?: AdminInput;
 }
 
 export interface SyncChannelInput {
-    companyCode: string;
-    tenantCode: string;
-    erpChannelId: string;
-    code?: string;
-    name?: string;
-    defaultCurrencyCode?: string;
-    defaultLanguageCode?: string;
-    pricesIncludeTax?: boolean;
+  companyCode: string;
+  tenantCode: string;
+  erpChannelId: string;
+  code?: string;
+  name?: string;
+  defaultCurrencyCode?: string;
+  defaultLanguageCode?: string;
+  pricesIncludeTax?: boolean;
 }
 
 /** A customer of a deal won in ERP: who they are, which store, and which customer group. */
 export interface SyncB2bCustomerInput {
-    erpChannelId: string;
-    erpCustomerId: string;
-    emailAddress: string;
-    firstName: string;
-    lastName: string;
-    phoneNumber?: string | null;
-    customerGroup: string;
+  erpChannelId: string;
+  erpCustomerId: string;
+  emailAddress: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber?: string | null;
+  customerGroup: string;
 }
 
 export interface SyncPaymentMethodInput {
-    erpChannelId: string;
-    code: string;
-    name: string;
-    description?: string;
-    enabled: boolean;
-    type: string;
+  erpChannelId: string;
+  code: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  type: string;
 }
 
 export interface SyncShippingMethodInput {
-    erpChannelId: string;
-    code: string;
-    name: string;
-    description?: string;
-    enabled: boolean;
-    currency?: string;
-    shippingAmount: number;
+  erpChannelId: string;
+  code: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  currency?: string;
+  shippingAmount: number;
 }
 
 /** tax_category.updated: an ERP Item Tax Template and the store channels its company sells in. */
 export interface SyncTaxCategoryInput {
-    name: string;
-    rate: number;
-    erpChannelIds: string[];
+  name: string;
+  rate: number;
+  erpChannelIds: string[];
 }
 
 export interface SyncInvoiceInput {
-    orderCode: string;
-    fileUrl?: string;
-    invoiceNumber?: string;
-    invoiceDate?: string;
-    status?: string;
-    idempotencyKey?: string;
-    erpChannelId?: string;
+  orderCode: string;
+  fileUrl?: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  status?: string;
+  idempotencyKey?: string;
+  erpChannelId?: string;
 }
 
 export interface AdminInput {
-    email: string;
-    password?: string;
-    firstName?: string;
-    lastName?: string;
+  email: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 export interface SyncAdminInput {
-    companyCode?: string;
-    tenantCode?: string;
-    email: string;
-    password?: string;
-    firstName?: string;
-    lastName?: string;
-    role?: 'company-admin' | 'tenant-admin' | 'store-staff';
-    channelCodes?: string[];
+  companyCode?: string;
+  tenantCode?: string;
+  email: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: "company-admin" | "tenant-admin" | "store-staff";
+  channelCodes?: string[];
 }
 
 // ---- Create input types (used by GraphQL resolver) ----
 
 export interface CreateTenantInput {
-    code: string;
-    name: string;
-    adminEmail: string;
-    adminPassword: string;
-    channelCode?: string;
-    companyCode?: string;
-    defaultCurrencyCode?: string;
-    defaultLanguageCode?: string;
+  code: string;
+  name: string;
+  adminEmail: string;
+  adminPassword: string;
+  channelCode?: string;
+  companyCode?: string;
+  defaultCurrencyCode?: string;
+  defaultLanguageCode?: string;
 }
 
 export interface CreateCompanyInput {
-    code: string;
-    name: string;
-    adminEmail?: string;
-    adminPassword?: string;
+  code: string;
+  name: string;
+  adminEmail?: string;
+  adminPassword?: string;
 }
 
 export interface UpdateTenantInput {
-    id: string;
-    name?: string;
-    enabled?: boolean;
-    maxChannels?: number;
+  id: string;
+  name?: string;
+  enabled?: boolean;
+  maxChannels?: number;
 }
 
 export interface UpdateCompanyInput {
-    id: string;
-    name?: string;
-    enabled?: boolean;
+  id: string;
+  name?: string;
+  enabled?: boolean;
 }
 
 // ---- Product sync input types ----
 
 export interface ProductVariantOptionInput {
-    group: string;
-    groupName: string;
-    value: string;
+  group: string;
+  groupName: string;
+  value: string;
 }
 
 /** A selling price in one currency, in minor units. */
 export interface ProductVariantPriceInput {
-    currencyCode: CurrencyCode;
-    amount: number;
+  currencyCode: CurrencyCode;
+  amount: number;
 }
 
 /** One store channel's own selling price, in minor units, which wins over `prices` in that channel. */
 export interface ProductVariantChannelPriceInput {
-    channelCode: string;
-    currencyCode: CurrencyCode;
-    amount: number;
+  channelCode: string;
+  currencyCode: CurrencyCode;
+  amount: number;
 }
 
 export interface ProductVariantInput {
-    sku: string;
-    name: string;
-    price: number | null;
-    prices?: ProductVariantPriceInput[];
-    channelPrices?: ProductVariantChannelPriceInput[];
-    options?: ProductVariantOptionInput[];
-    stockOnHand?: number;
-    trackInventory?: boolean;
-    enabled?: boolean;
-    /** Kilograms per unit, from the ERP Item's weight. */
-    weight?: number | null;
-    /** The ERP Item Tax Template's title, which is the Vendure tax category's name. */
-    taxCategory?: string | null;
-    /** The tax rate (%) that template charges. */
-    taxRate?: number | null;
+  sku: string;
+  name: string;
+  price: number | null;
+  prices?: ProductVariantPriceInput[];
+  channelPrices?: ProductVariantChannelPriceInput[];
+  options?: ProductVariantOptionInput[];
+  stockOnHand?: number;
+  trackInventory?: boolean;
+  enabled?: boolean;
+  /** Kilograms per unit, from the ERP Item's weight. */
+  weight?: number | null;
+  /** The ERP Item Tax Template's title, which is the Vendure tax category's name. */
+  taxCategory?: string | null;
+  /** The tax rate (%) that template charges. */
+  taxRate?: number | null;
 }
 
 export interface SyncProductInput {
-    erpProductId: string;
-    name: string;
-    slug?: string;
-    description?: string;
-    enabled?: boolean;
-    variants: ProductVariantInput[];
-    channelCodes?: string[];
+  erpProductId: string;
+  name: string;
+  slug?: string;
+  description?: string;
+  enabled?: boolean;
+  variants: ProductVariantInput[];
+  channelCodes?: string[];
 }
 
 export interface AssignProductToChannelInput {
-    erpProductId: string;
-    channelCodes: string[];
-    priceFactor?: number;
+  erpProductId: string;
+  channelCodes: string[];
+  priceFactor?: number;
 }
 
 export interface RemoveProductFromChannelInput {
-    erpProductId: string;
-    channelCodes: string[];
+  erpProductId: string;
+  channelCodes: string[];
 }
 
 // ---- Response interfaces (entities with eagerly-loaded relations) ----
 
 export interface CompanyWithRelations extends Company {
-    channels: Channel[];
-    administrators: Administrator[];
+  channels: Channel[];
+  administrators: Administrator[];
 }
 
 export interface TenantWithRelations extends Tenant {
-    channels: Channel[];
-    administrators: Administrator[];
+  channels: Channel[];
+  administrators: Administrator[];
 }
 
 // ---- Custom field declarations ----
 
-declare module '@vendure/core/dist/entity/custom-entity-fields' {
-    interface CustomChannelFields {
-        tenant: Tenant | null;
-        erpChannelId: string | null;
-    }
-    interface CustomCustomerFields {
-        erpCustomerId: string | null;
-    }
-    interface CustomAdministratorFields {
-        tenant: Tenant | null;
-    }
-    interface CustomOrderFields {
-        erpInvoice: Asset | null;
-        erpInvoiceKey: string | null;
-        erpInvoiceNumber: string | null;
-        erpInvoiceDate: Date | null;
-        erpInvoiceStatus: string | null;
-        gstin: string | null;
-    }
-    interface CustomProductVariantFields {
-        weight: number | null;
-    }
+declare module "@vendure/core/dist/entity/custom-entity-fields" {
+  interface CustomChannelFields {
+    tenant: Tenant | null;
+    erpChannelId: string | null;
+  }
+  interface CustomCustomerFields {
+    erpCustomerId: string | null;
+  }
+  interface CustomAdministratorFields {
+    tenant: Tenant | null;
+  }
+  interface CustomOrderFields {
+    erpInvoice: Asset | null;
+    erpInvoiceKey: string | null;
+    erpInvoiceNumber: string | null;
+    erpInvoiceDate: Date | null;
+    erpInvoiceStatus: string | null;
+    gstin: string | null;
+  }
+  interface CustomProductVariantFields {
+    weight: number | null;
+  }
 }
