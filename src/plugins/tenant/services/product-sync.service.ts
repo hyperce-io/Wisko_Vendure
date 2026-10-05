@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { GlobalFlag } from "@vendure/common/lib/generated-types";
 import { normalizeString } from "@vendure/common/lib/normalize-string";
+import { DEFAULT_CHANNEL_CODE } from "@vendure/common/lib/shared-constants";
 import { unique } from "@vendure/common/lib/unique";
 import {
   Channel,
@@ -20,10 +21,9 @@ import {
   TransactionalConnection,
   UserInputError,
 } from "@vendure/core";
-import { DEFAULT_CHANNEL_CODE } from "@vendure/common/lib/shared-constants";
 import "../types";
-import { ensureChannelStockLocation } from "./channel-stock-location";
 import { ProductVariantInput, SyncProductInput } from "../types";
+import { ensureChannelStockLocation } from "./channel-stock-location";
 import { TaxCategorySyncService } from "./tax-category-sync.service";
 
 @Injectable()
@@ -52,7 +52,10 @@ export class ProductSyncService {
     input: SyncProductInput,
   ): Promise<Product> {
     return this.connection.withTransaction(ctx, async (txCtx) => {
-      const slug = (input.slug || `erp-${input.erpProductId}`).toLowerCase();
+      const slug = normalizeString(
+        input.slug || `erp-${input.erpProductId}`,
+        "-",
+      );
       const product = await this.upsertProduct(txCtx, input, slug);
       const variants = input.variants || [];
 
@@ -180,7 +183,12 @@ export class ProductSyncService {
       );
       // No ERP category/weight means "keep what Vendure has", the same as a missing price.
       const taxCategoryId = variantInput.taxCategory
-        ? (await this.taxCategorySyncService.findOrCreate(ctx, variantInput.taxCategory)).id
+        ? (
+            await this.taxCategorySyncService.findOrCreate(
+              ctx,
+              variantInput.taxCategory,
+            )
+          ).id
         : undefined;
       const customFields =
         variantInput.weight !== undefined
@@ -337,7 +345,11 @@ export class ProductSyncService {
   ): Promise<void> {
     for (const variantInput of variants) {
       const variantId = variantIdsBySku.get(variantInput.sku);
-      if (!variantId || (!variantInput.prices?.length && !variantInput.channelPrices?.length)) continue;
+      if (
+        !variantId ||
+        (!variantInput.prices?.length && !variantInput.channelPrices?.length)
+      )
+        continue;
       for (const channel of channels) {
         const channelPrice =
           variantInput.channelPrices?.find(
@@ -431,9 +443,17 @@ export class ProductSyncService {
       }
     }
     for (const [categoryName, rate] of ratesByCategory) {
-      const category = await this.taxCategorySyncService.findOrCreate(ctx, categoryName);
+      const category = await this.taxCategorySyncService.findOrCreate(
+        ctx,
+        categoryName,
+      );
       for (const channel of channels) {
-        await this.taxCategorySyncService.ensureRate(ctx, category, channel, rate);
+        await this.taxCategorySyncService.ensureRate(
+          ctx,
+          category,
+          channel,
+          rate,
+        );
       }
     }
   }
@@ -498,7 +518,9 @@ export class ProductSyncService {
         .getRepository(ctx, Channel)
         .findOne({ where: { customFields: { erpChannelId } } });
       if (!channel) {
-        throw new UserInputError(`Channel with erpChannelId "${erpChannelId}" not found`);
+        throw new UserInputError(
+          `Channel with erpChannelId "${erpChannelId}" not found`,
+        );
       }
       targetChannel = channel;
     }
@@ -511,7 +533,13 @@ export class ProductSyncService {
         );
         continue;
       }
-      await this.updateStockForVariantChannels(ctx, variant.id as ID, item.qty, targetChannel, item.reserved);
+      await this.updateStockForVariantChannels(
+        ctx,
+        variant.id as ID,
+        item.qty,
+        targetChannel,
+        item.reserved,
+      );
     }
   }
 
@@ -566,7 +594,11 @@ export class ProductSyncService {
         ctx,
         channel,
       );
-      const level = await this.stockLevelService.getStockLevel(ctx, variantId, location.id);
+      const level = await this.stockLevelService.getStockLevel(
+        ctx,
+        variantId,
+        location.id,
+      );
       const delta = targetQty - level.stockOnHand;
       if (delta !== 0) {
         await this.stockLevelService.updateStockOnHandForLocation(
@@ -589,7 +621,9 @@ export class ProductSyncService {
       }
       Logger.info(
         `Stock updated: variant ${variantId} → ${targetQty} on hand` +
-          (targetAllocated !== undefined ? `, ${targetAllocated} allocated` : "") +
+          (targetAllocated !== undefined
+            ? `, ${targetAllocated} allocated`
+            : "") +
           ` at channel ${channel.code}`,
         "ProductSync",
       );
@@ -602,7 +636,7 @@ export class ProductSyncService {
     ctx: RequestContext,
     erpProductId: string,
   ): Promise<Product | undefined> {
-    const slug = `erp-${erpProductId}`.toLowerCase();
+    const slug = normalizeString(`erp-${erpProductId}`, "-");
     const result = await this.productService.findOneBySlug(ctx, slug);
     if (result) return result as unknown as Product;
     const { items } = await this.productService.findAll(ctx, {
