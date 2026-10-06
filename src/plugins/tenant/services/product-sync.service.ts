@@ -190,10 +190,14 @@ export class ProductSyncService {
             )
           ).id
         : undefined;
-      const customFields =
-        variantInput.weight !== undefined
-          ? { weight: variantInput.weight }
-          : undefined;
+      const customFields = {
+        ...(variantInput.weight !== undefined && { weight: variantInput.weight }),
+        // What erp_items promotions match a line on (promotion/erp-items-promotion.ts).
+        ...(variantInput.itemGroups !== undefined && {
+          erpItemGroups: variantInput.itemGroups,
+        }),
+        ...(variantInput.brand !== undefined && { erpBrand: variantInput.brand }),
+      };
 
       if (existing) {
         const currentOptionIds = existing.options.map((option) => option.id);

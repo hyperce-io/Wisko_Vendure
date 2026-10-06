@@ -20,7 +20,7 @@ import {
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
-import { TENANT_ADMIN_PERMISSIONS } from '../constants';
+import { ERP_MANAGED_PERMISSIONS, TENANT_ADMIN_PERMISSIONS } from '../constants';
 import { ensureChannelStockLocation } from './channel-stock-location';
 import {
     SyncCompanyInput,
@@ -128,6 +128,7 @@ export class TenantService {
                 Logger.info(`Created company admin: ${input.admin.email}`, 'TenantService');
             }
         } else {
+            await this.revokeErpManagedPermissions(ctx, company.parentRoleId);
             let changed = false;
             if (input.name !== undefined && input.name !== company.name) { company.name = input.name; changed = true; }
             if (input.enabled !== undefined && input.enabled !== company.enabled) { company.enabled = input.enabled; changed = true; }
@@ -227,6 +228,7 @@ export class TenantService {
                 Logger.info(`Created tenant admin: ${input.admin.email}`, 'TenantService');
             }
         } else {
+            await this.revokeErpManagedPermissions(ctx, tenant.parentRoleId);
             let changed = false;
             if (input.name !== undefined) { tenant.name = input.name; changed = true; }
             if (input.enabled !== undefined) { tenant.enabled = input.enabled; changed = true; }
@@ -237,6 +239,22 @@ export class TenantService {
         }
 
         return tenant;
+    }
+
+    /**
+     * Roles created before a permission became ERP-managed still hold it. Removes only those
+     * permissions, keeping anything else an admin granted, and writes only when one is present.
+     */
+    private async revokeErpManagedPermissions(ctx: RequestContext, roleId: ID) {
+        const role = await this.roleService.findOne(ctx, roleId);
+        if (!role || !role.permissions.some(permission => ERP_MANAGED_PERMISSIONS.includes(permission))) {
+            return;
+        }
+        await this.roleService.update(ctx, {
+            id: role.id,
+            permissions: role.permissions.filter(permission => !ERP_MANAGED_PERMISSIONS.includes(permission)),
+        });
+        Logger.info(`Revoked ERP-managed permissions from role ${role.code}`, 'TenantService');
     }
 
     async disableTenant(ctx: RequestContext, code: string) {

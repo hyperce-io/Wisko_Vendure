@@ -17,6 +17,10 @@ import { OrderEventPublisher } from "./events/order-event.publisher";
 import { TenantChannelHandler } from "./events/tenant-channel.handler";
 import { TenantBoundaryGuard } from "./guards/tenant-boundary.guard";
 import { wiskoErpPaymentHandler } from "./payment/wisko-erp-payment-handler";
+import {
+  erpItemsCondition,
+  erpItemsDiscountAction,
+} from "./promotion/erp-items-promotion";
 import { RabbitMQConsumer } from "./rabbitmq/rabbitmq.consumer";
 import { RabbitMQMessageHandler } from "./rabbitmq/rabbitmq.handler";
 import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
@@ -24,6 +28,7 @@ import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
 import { ProductSyncService } from "./services/product-sync.service";
+import { PromotionSyncService } from "./services/promotion-sync.service";
 import { ShippingMethodSyncService } from "./services/shipping-method-sync.service";
 import { TaxCategorySyncService } from "./services/tax-category-sync.service";
 import { TenantService } from "./services/tenant.service";
@@ -42,6 +47,7 @@ import "./types";
     PaymentMethodSyncService,
     TaxCategorySyncService,
     B2bCustomerSyncService,
+    PromotionSyncService,
     TenantChannelHandler,
     OrderEventPublisher,
     CustomerEventPublisher,
@@ -61,6 +67,8 @@ import "./types";
   dashboard: "./dashboard/index.tsx",
   configuration: (config: RuntimeVendureConfig) => {
     config.paymentOptions.paymentMethodHandlers.push(wiskoErpPaymentHandler);
+    config.promotionOptions.promotionConditions.push(erpItemsCondition);
+    config.promotionOptions.promotionActions.push(erpItemsDiscountAction);
 
     config.taxOptions.orderTaxCalculationStrategy =
       new OrderLevelTaxCalculationStrategy();
@@ -147,6 +155,32 @@ import "./types";
       nullable: true,
       readonly: true,
       label: [{ languageCode: LanguageCode.en, value: "Weight (kg)" }],
+    }, {
+      name: "erpItemGroups",
+      type: "string",
+      list: true,
+      nullable: true,
+      readonly: true,
+      label: [{ languageCode: LanguageCode.en, value: "ERP item groups" }],
+    }, {
+      name: "erpBrand",
+      type: "string",
+      nullable: true,
+      readonly: true,
+      label: [{ languageCode: LanguageCode.en, value: "ERP brand" }],
+    });
+    config.customFields.Promotion.push({
+      name: "erpPromotionId",
+      type: "string",
+      unique: true,
+      nullable: true,
+      readonly: true,
+      label: [{ languageCode: LanguageCode.en, value: "ERP promotion" }],
+    }, {
+      name: "erpModifiedAt",
+      type: "datetime",
+      nullable: true,
+      internal: true,
     });
     config.customFields.Customer.push({
       name: "erpCustomerId",

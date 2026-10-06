@@ -14,6 +14,7 @@ import { PaymentMethodSyncService } from '../services/payment-method-sync.servic
 import { ShippingMethodSyncService } from '../services/shipping-method-sync.service';
 import { TaxCategorySyncService } from '../services/tax-category-sync.service';
 import { B2bCustomerSyncService } from '../services/b2b-customer-sync.service';
+import { PromotionSyncService } from '../services/promotion-sync.service';
 import { ROUTING_KEYS } from './rabbitmq.constants';
 import {
     SyncCompanyInput,
@@ -28,6 +29,7 @@ import {
     SyncShippingMethodInput,
     SyncTaxCategoryInput,
     SyncB2bCustomerInput,
+    SyncPromotionInput,
 } from '../types';
 
 @Injectable()
@@ -40,6 +42,7 @@ export class RabbitMQMessageHandler {
         private shippingMethodSyncService: ShippingMethodSyncService,
         private taxCategorySyncService: TaxCategorySyncService,
         private b2bCustomerSyncService: B2bCustomerSyncService,
+        private promotionSyncService: PromotionSyncService,
         private requestContextService: RequestContextService,
         private connection: TransactionalConnection,
         private configService: ConfigService,
@@ -147,6 +150,17 @@ export class RabbitMQMessageHandler {
             // B2B customer
             case ROUTING_KEYS.B2B_CUSTOMER_UPSERTED:
                 await this.handleB2bCustomerSync(ctx, payload);
+                break;
+
+            // Promotion
+            case ROUTING_KEYS.PROMOTION_UPSERTED:
+                await this.handlePromotionSync(ctx, payload);
+                break;
+            case ROUTING_KEYS.PROMOTION_DISABLED:
+                await this.handlePromotionDisable(ctx, payload);
+                break;
+            case ROUTING_KEYS.PROMOTION_RECONCILE:
+                await this.handlePromotionReconcile(ctx, payload);
                 break;
 
             // Full sync
@@ -406,6 +420,59 @@ export class RabbitMQMessageHandler {
             erpChannelId: payload.erp_channel_id,
             code: payload.code,
         });
+    }
+
+    // ---- Promotion ----
+
+    private async handlePromotionSync(ctx: RequestContext, payload: any) {
+        if (!payload.erp_promotion_id) throw new Error('erp_promotion_id is required');
+        if (!payload.name) throw new Error('name is required');
+        if (!payload.currency) throw new Error('currency is required');
+        if (!payload.modified) throw new Error('modified is required');
+        if (payload.apply_on !== 'transaction' && payload.apply_on !== 'items') {
+            throw new Error('apply_on must be "transaction" or "items"');
+        }
+        if (!Array.isArray(payload.erp_channel_ids)) throw new Error('erp_channel_ids must be an array');
+        for (const field of ['min_order_amount', 'discount_amount']) {
+            if (!Number.isInteger(payload[field])) throw new Error(`${field} must be an integer in minor units`);
+        }
+        if (typeof payload.discount_percentage !== 'number') throw new Error('discount_percentage must be a number');
+        const input: SyncPromotionInput = {
+            erpPromotionId: payload.erp_promotion_id,
+            name: payload.name,
+            enabled: payload.enabled !== false,
+            startsAt: payload.starts_at ? new Date(payload.starts_at) : null,
+            endsAt: payload.ends_at ? new Date(payload.ends_at) : null,
+            couponCode: payload.coupon_code || undefined,
+            usageLimit: payload.usage_limit ?? null,
+            perCustomerUsageLimit: payload.per_customer_usage_limit ?? null,
+            erpChannelIds: payload.erp_channel_ids,
+            currency: payload.currency,
+            applyOn: payload.apply_on,
+            skus: payload.skus || [],
+            itemGroups: payload.item_groups || [],
+            brands: payload.brands || [],
+            minOrderAmount: payload.min_order_amount,
+            discountPercentage: payload.discount_percentage,
+            discountAmount: payload.discount_amount,
+            modified: new Date(payload.modified),
+        };
+        await this.promotionSyncService.syncPromotion(ctx, input);
+    }
+
+    private async handlePromotionDisable(ctx: RequestContext, payload: any) {
+        if (!payload.erp_promotion_id) throw new Error('erp_promotion_id is required');
+        if (!payload.modified) throw new Error('modified is required');
+        await this.promotionSyncService.disablePromotion(
+            ctx,
+            payload.erp_promotion_id,
+            new Date(payload.modified),
+        );
+    }
+
+    private async handlePromotionReconcile(ctx: RequestContext, payload: any) {
+        if (!Array.isArray(payload.erp_promotion_ids)) throw new Error('erp_promotion_ids must be an array');
+        await this.promotionSyncService.reconcilePromotions(ctx, payload.erp_promotion_ids);
     }
 
     // ---- Tax category ----

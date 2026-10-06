@@ -67,6 +67,31 @@ export interface SyncTaxCategoryInput {
   erpChannelIds: string[];
 }
 
+/**
+ * promotion.upserted: one ERP Pricing Rule (or one Coupon Code of a coupon-based rule), in ERP
+ * terms. Amounts are minor units in `currency`.
+ */
+export interface SyncPromotionInput {
+  erpPromotionId: string;
+  name: string;
+  enabled: boolean;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  couponCode?: string;
+  usageLimit: number | null;
+  perCustomerUsageLimit: number | null;
+  erpChannelIds: string[];
+  currency: string;
+  applyOn: "transaction" | "items";
+  skus: string[];
+  itemGroups: string[];
+  brands: string[];
+  minOrderAmount: number;
+  discountPercentage: number;
+  discountAmount: number;
+  modified: Date;
+}
+
 export interface SyncInvoiceInput {
   orderCode: string;
   fileUrl?: string;
@@ -165,6 +190,10 @@ export interface ProductVariantInput {
   taxCategory?: string | null;
   /** The tax rate (%) that template charges. */
   taxRate?: number | null;
+  /** The ERP Item Group and every group above it, so a promotion on a parent group matches. */
+  itemGroups?: string[];
+  /** The ERP Brand. */
+  brand?: string | null;
 }
 
 export interface SyncProductInput {
@@ -223,5 +252,11 @@ declare module "@vendure/core/dist/entity/custom-entity-fields" {
   }
   interface CustomProductVariantFields {
     weight: number | null;
+    erpItemGroups: string[] | null;
+    erpBrand: string | null;
+  }
+  interface CustomPromotionFields {
+    erpPromotionId: string | null;
+    erpModifiedAt: Date | null;
   }
 }

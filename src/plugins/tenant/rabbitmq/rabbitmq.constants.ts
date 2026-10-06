@@ -58,6 +58,10 @@ export const ROUTING_KEYS = {
 
   B2B_CUSTOMER_UPSERTED: "b2b_customer.upserted",
 
+  PROMOTION_UPSERTED: "promotion.upserted",
+  PROMOTION_DISABLED: "promotion.disabled",
+  PROMOTION_RECONCILE: "promotion.reconcile",
+
   // Outbound only: ids Vendure created, written back onto the ERP records (drained by the ERP's
   // wisko.integrations.vendure_sync.drain_vendure_reply_queue).
   ERP_SYNC_REPLY: "vendure.erp-sync.reply",
