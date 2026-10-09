@@ -116,7 +116,7 @@ export class ProductSyncService {
             languageCode: LanguageCode.en,
             name: input.name,
             slug,
-            description: input.description || "",
+            description: "",
           },
         ],
       });
@@ -126,17 +126,10 @@ export class ProductSyncService {
       );
       return created;
     }
+    // Name and description are Strapi's after create (ProductContentSyncService).
     await this.productService.update(ctx, {
       id: existing.id,
       enabled: input.enabled,
-      translations: [
-        {
-          languageCode: LanguageCode.en,
-          name: input.name,
-          slug,
-          description: input.description || undefined,
-        },
-      ],
     });
     Logger.info(
       `Updated product: ${input.name} (erp: ${input.erpProductId})`,
@@ -146,8 +139,9 @@ export class ProductSyncService {
   }
 
   /**
-   * Updates the product's variants that already exist (matched by SKU within this product) and
-   * creates the rest. Returns every variant's id by SKU.
+   * Updates the product's variants that already exist (matched by SKU within this product), creates
+   * the rest, and soft-deletes the ones the ERP no longer has (a deleted ERP variant). Returns every
+   * variant's id by SKU.
    */
   private async upsertVariants(
     ctx: RequestContext,
@@ -164,6 +158,22 @@ export class ProductSyncService {
       );
     const variantIdsBySku = new Map<string, ID>();
 
+    // First, so a new variant with a removed one's options is not refused as a duplicate.
+    const erpSkus = new Set(variants.map((variantInput) => variantInput.sku));
+    const removedVariants = existingVariants.filter(
+      (variant) => !erpSkus.has(variant.sku),
+    );
+    if (variants.length && removedVariants.length) {
+      await this.productVariantService.softDelete(
+        ctx,
+        removedVariants.map((variant) => variant.id),
+      );
+      Logger.info(
+        `Removed variants no longer in ERP: ${removedVariants.map((variant) => variant.sku).join(", ")}`,
+        "ProductSync",
+      );
+    }
+
     for (const variantInput of variants) {
       const optionIds = (variantInput.options || [])
         .map((option) =>
@@ -175,9 +185,6 @@ export class ProductSyncService {
       const trackInventory = variantInput.trackInventory
         ? GlobalFlag.TRUE
         : GlobalFlag.FALSE;
-      const translations = [
-        { languageCode: LanguageCode.en, name: variantInput.name },
-      ];
       const existing = existingVariants.find(
         (variant) => variant.sku === variantInput.sku,
       );
@@ -190,10 +197,14 @@ export class ProductSyncService {
             )
           ).id
         : undefined;
-      const customFields =
-        variantInput.weight !== undefined
-          ? { weight: variantInput.weight }
-          : undefined;
+      const customFields = {
+        ...(variantInput.weight !== undefined && { weight: variantInput.weight }),
+        // What erp_items promotions match a line on (promotion/erp-items-promotion.ts).
+        ...(variantInput.itemGroups !== undefined && {
+          erpItemGroups: variantInput.itemGroups,
+        }),
+        ...(variantInput.brand !== undefined && { erpBrand: variantInput.brand }),
+      };
 
       if (existing) {
         const currentOptionIds = existing.options.map((option) => option.id);
@@ -212,7 +223,6 @@ export class ProductSyncService {
             stockOnHand: variantInput.stockOnHand,
             trackInventory,
             enabled: variantInput.enabled,
-            translations,
             taxCategoryId,
             customFields,
           },
@@ -229,7 +239,10 @@ export class ProductSyncService {
             stockOnHand: variantInput.stockOnHand ?? 0,
             trackInventory,
             enabled: variantInput.enabled !== false,
-            translations,
+            // Strapi's after create, like the product's name.
+            translations: [
+              { languageCode: LanguageCode.en, name: variantInput.name },
+            ],
             taxCategoryId,
             customFields,
           },
@@ -632,7 +645,7 @@ export class ProductSyncService {
 
   // ---- Helpers ----
 
-  private async findByErpId(
+  async findByErpId(
     ctx: RequestContext,
     erpProductId: string,
   ): Promise<Product | undefined> {
@@ -646,7 +659,7 @@ export class ProductSyncService {
     return items[0] as unknown as Product | undefined;
   }
 
-  private async findVariantBySku(ctx: RequestContext, sku: string) {
+  async findVariantBySku(ctx: RequestContext, sku: string) {
     const { items } = await this.productVariantService.findAll(ctx, {
       filter: { sku: { eq: sku } },
       take: 1,

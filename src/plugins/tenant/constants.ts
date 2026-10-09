@@ -1,5 +1,15 @@
 import { Permission } from '@vendure/core';
 
+/**
+ * Promotions are managed in ERP and synced in (services/promotion-sync.service.ts); an edit made in
+ * the dashboard would be overwritten by the next sync, so tenant admins may only read them.
+ */
+export const ERP_MANAGED_PERMISSIONS = [
+    Permission.CreatePromotion,
+    Permission.UpdatePromotion,
+    Permission.DeletePromotion,
+];
+
 export const TENANT_ADMIN_PERMISSIONS = [
     Permission.ReadCatalog,
     Permission.CreateCatalog,
@@ -11,9 +21,6 @@ export const TENANT_ADMIN_PERMISSIONS = [
     Permission.ReadOrder,
     Permission.UpdateOrder,
     Permission.ReadPromotion,
-    Permission.CreatePromotion,
-    Permission.UpdatePromotion,
-    Permission.DeletePromotion,
     Permission.ReadSettings,
     Permission.CreateChannel,
     Permission.ReadChannel,

@@ -8,6 +8,7 @@ import {
     RequestContext,
     Order,
     EntityHydrator,
+    Promotion,
     ShippingMethod,
     TransactionalConnection,
 } from '@vendure/core';
@@ -102,6 +103,12 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
                 : [],
         );
 
+        // The promotions Vendure recorded on the order, i.e. the ones that discounted it. ERP books
+        // their usage by erpPromotionId. Loaded by query for the same reason as shipping methods.
+        const promotions = await this.connection.getRepository(ctx, Promotion).find({
+            where: { orders: { id: order.id } },
+        });
+
         return {
             event: `order.${this.stateToEventName(toState)}`,
             timestamp: new Date().toISOString(),
@@ -187,6 +194,16 @@ export class OrderEventPublisher implements OnApplicationBootstrap {
 
                 // Discounts
                 discounts: order.discounts || [],
+                promotions: promotions.map(promotion => ({
+                    erpPromotionId: promotion.customFields.erpPromotionId,
+                    couponCode: promotion.couponCode ?? null,
+                    // order.discounts groups every line and shipping adjustment by its source.
+                    discountWithTax: -(
+                        (order.discounts || []).find(
+                            discount => discount.adjustmentSource === promotion.getSourceId(),
+                        )?.amountWithTax ?? 0
+                    ),
+                })),
 
                 // Payments
                 payments: (order.payments || []).map(p => ({
