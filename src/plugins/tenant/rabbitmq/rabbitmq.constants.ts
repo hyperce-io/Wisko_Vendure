@@ -26,6 +26,8 @@ export const ROUTING_KEYS = {
   PRODUCT_ASSIGNED: "product.assigned",
   PRODUCT_REMOVED: "product.removed",
 
+  PRODUCT_CONTENT_PUBLISHED: "product_content.published",
+
   STOCK_LEVEL_CHANGED: "stock.level_changed",
 
   ORDER_PLACED: "order.placed",

@@ -27,6 +27,7 @@ import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
 import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
+import { ProductContentSyncService } from "./services/product-content-sync.service";
 import { ProductSyncService } from "./services/product-sync.service";
 import { PromotionSyncService } from "./services/promotion-sync.service";
 import { ShippingMethodSyncService } from "./services/shipping-method-sync.service";
@@ -42,6 +43,7 @@ import "./types";
   providers: [
     TenantService,
     ProductSyncService,
+    ProductContentSyncService,
     InvoiceSyncService,
     ShippingMethodSyncService,
     PaymentMethodSyncService,
@@ -149,39 +151,146 @@ import "./types";
           value ? gstinError(value) : undefined,
       },
     );
-    config.customFields.ProductVariant.push({
-      name: "weight",
-      type: "float",
-      nullable: true,
-      readonly: true,
-      label: [{ languageCode: LanguageCode.en, value: "Weight (kg)" }],
-    }, {
-      name: "erpItemGroups",
-      type: "string",
-      list: true,
-      nullable: true,
-      readonly: true,
-      label: [{ languageCode: LanguageCode.en, value: "ERP item groups" }],
-    }, {
-      name: "erpBrand",
-      type: "string",
-      nullable: true,
-      readonly: true,
-      label: [{ languageCode: LanguageCode.en, value: "ERP brand" }],
-    });
-    config.customFields.Promotion.push({
-      name: "erpPromotionId",
-      type: "string",
-      unique: true,
-      nullable: true,
-      readonly: true,
-      label: [{ languageCode: LanguageCode.en, value: "ERP promotion" }],
-    }, {
-      name: "erpModifiedAt",
-      type: "datetime",
+    config.customFields.ProductVariant.push(
+      {
+        name: "weight",
+        type: "float",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Weight (kg)" }],
+      },
+      {
+        name: "erpItemGroups",
+        type: "string",
+        list: true,
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP item groups" }],
+      },
+      {
+        name: "erpBrand",
+        type: "string",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP brand" }],
+      },
+      {
+        name: "description",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Full description" }],
+        ui: { component: "rich-text-form-input", tab: "Content" },
+      },
+      {
+        name: "shortDescription",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Short description" }],
+        ui: { component: "textarea-form-input", tab: "Content" },
+      },
+      {
+        name: "specs",
+        type: "text",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Specifications" }],
+        ui: { component: "json-editor-form-input", tab: "Specifications" },
+      },
+      {
+        name: "seoTitle",
+        type: "localeString",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "SEO title" }],
+        ui: { tab: "SEO" },
+      },
+      {
+        name: "seoDescription",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "SEO description" }],
+        ui: { component: "textarea-form-input", tab: "SEO" },
+      },
+      {
+        name: "seoSchema",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [
+          { languageCode: LanguageCode.en, value: "SEO schema (JSON-LD)" },
+        ],
+        ui: { component: "json-editor-form-input", tab: "SEO" },
+      },
+    );
+    config.customFields.Product.push(
+      {
+        name: "shortDescription",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Short description" }],
+        ui: { component: "textarea-form-input", tab: "Content" },
+      },
+      {
+        name: "specs",
+        type: "text",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "Specifications" }],
+        ui: { component: "json-editor-form-input", tab: "Specifications" },
+      },
+      {
+        name: "seoTitle",
+        type: "localeString",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "SEO title" }],
+        ui: { tab: "SEO" },
+      },
+      {
+        name: "seoDescription",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "SEO description" }],
+        ui: { component: "textarea-form-input", tab: "SEO" },
+      },
+      {
+        name: "seoSchema",
+        type: "localeText",
+        nullable: true,
+        readonly: true,
+        label: [
+          { languageCode: LanguageCode.en, value: "SEO schema (JSON-LD)" },
+        ],
+        ui: { component: "json-editor-form-input", tab: "SEO" },
+      },
+    );
+    config.customFields.Asset.push({
+      name: "sourceUrl",
+      type: "text",
       nullable: true,
       internal: true,
     });
+    config.customFields.Promotion.push(
+      {
+        name: "erpPromotionId",
+        type: "string",
+        unique: true,
+        nullable: true,
+        readonly: true,
+        label: [{ languageCode: LanguageCode.en, value: "ERP promotion" }],
+      },
+      {
+        name: "erpModifiedAt",
+        type: "datetime",
+        nullable: true,
+        internal: true,
+      },
+    );
     config.customFields.Customer.push({
       name: "erpCustomerId",
       type: "string",

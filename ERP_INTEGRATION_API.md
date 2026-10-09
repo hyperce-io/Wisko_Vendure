@@ -220,6 +220,10 @@ DLQ:       wisko.sync.vendure.dlq
 
 ## Product Payloads
 
+Storefront content (descriptions, images, video, specs, SEO, translated names) does not come from
+the ERP. It is edited in Strapi and arrives as `product_content.published` (see
+`src/plugins/tenant/services/product-content-sync.service.ts`).
+
 ### product.created
 
 Create a product with variants. Optionally assign to channels immediately.
@@ -230,7 +234,7 @@ Create a product with variants. Optionally assign to channels immediately.
     "erpProductId": "PROD-001",
     "name": "Air Max 90",
     "slug": "erp-PROD-001",
-    "description": "Classic Nike Air Max 90 sneakers",
+    "ownerCode": "a1b2c3d4",
     "enabled": true,
     "variants": [
       {
@@ -262,7 +266,6 @@ Update product details + variant prices/stock. Matched by `erpProductId`. Varian
   "product": {
     "erpProductId": "PROD-001",
     "name": "Air Max 90 (2026 Edition)",
-    "description": "Updated description",
     "variants": [
       {
         "sku": "AM90-BLK-10",
@@ -434,9 +437,9 @@ Everything in one message — company + tenants + channels + products.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `erpProductId` | string | Always | Idempotency key — stored as slug `erp-{id}` |
-| `name` | string | On create/update | Product name |
+| `name` | string | On create/update | Product name. Vendure uses it only when it creates the product; after that the name comes from Strapi |
 | `slug` | string | No | Auto-generated as `erp-{erpProductId}` if omitted |
-| `description` | string | No | Product description |
+| `ownerCode` | string | No | The owning Company's uid. Read by Strapi (owner of the Product Content); ignored by Vendure |
 | `enabled` | boolean | No | Default: true |
 | `variants` | array | On create | At least one variant required |
 | `channelCodes` | string[] | No | Assign to these channels on create |
@@ -446,7 +449,7 @@ Everything in one message — company + tenants + channels + products.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `sku` | string | Always | Unique — used for idempotent upsert |
-| `name` | string | Always | Variant display name |
+| `name` | string | Always | Variant display name. Used only when Vendure creates the variant; after that it comes from Strapi |
 | `price` | number | Always | Price in minor units (cents/paise) |
 | `stockOnHand` | number | No | Default: 0 |
 | `trackInventory` | boolean | No | Default: false |

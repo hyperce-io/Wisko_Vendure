@@ -17,6 +17,7 @@ import {
     Permission,
     isGraphQlErrorResult,
     StockLocationService,
+    GlobalSettingsService,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
@@ -34,6 +35,7 @@ import {
     TenantWithRelations,
 } from '../types';
 import '../types';
+import type { UpdateChannelInput } from '@vendure/common/lib/generated-types';
 
 @Injectable()
 export class TenantService {
@@ -43,6 +45,7 @@ export class TenantService {
         private roleService: RoleService,
         private administratorService: AdministratorService,
         private stockLocationService: StockLocationService,
+        private globalSettingsService: GlobalSettingsService,
     ) {}
 
     // ========================================================================
@@ -295,15 +298,21 @@ export class TenantService {
             .findOne({ where: { customFields: { erpChannelId: input.erpChannelId } } as any });
 
         if (existing) {
-            const updatePayload: any = {
+            const updatePayload: UpdateChannelInput = {
                 id: existing.id,
-                // customFields is typed as JSON in UpdateChannelInput
                 customFields: { tenant, erpChannelId: input.erpChannelId },
             };
             if (input.code) updatePayload.code = input.code;
-            if (input.defaultLanguageCode) updatePayload.defaultLanguageCode = input.defaultLanguageCode;
-            if (input.defaultCurrencyCode) updatePayload.defaultCurrencyCode = input.defaultCurrencyCode;
-            const updated = (await this.channelService.update(ctx, updatePayload)) as Channel;
+            if (input.defaultLanguageCode || input.availableLanguageCodes) {
+                const languages = await this.enableStoreLanguages(ctx, input.defaultLanguageCode, input.availableLanguageCodes);
+                updatePayload.defaultLanguageCode = languages.defaultLanguageCode;
+                updatePayload.availableLanguageCodes = languages.availableLanguageCodes;
+            }
+            if (input.defaultCurrencyCode) updatePayload.defaultCurrencyCode = this.toCurrencyCode(input.defaultCurrencyCode);
+            const updated = await this.channelService.update(ctx, updatePayload);
+            if (isGraphQlErrorResult(updated)) {
+                throw new UserInputError(updated.message);
+            }
             // Also gives channels created before stock locations were set up their own.
             await ensureChannelStockLocation(this.connection, this.stockLocationService, ctx, updated);
             return updated;
@@ -318,16 +327,17 @@ export class TenantService {
             .getRepository(Channel)
             .findOne({ where: { id: defaultChannel.id }, relations: { defaultTaxZone: true, defaultShippingZone: true } });
 
+        const languages = await this.enableStoreLanguages(ctx, input.defaultLanguageCode, input.availableLanguageCodes);
         const result = await this.channelService.create(ctx, {
             code: channelCode,
             token,
-            defaultLanguageCode: (input.defaultLanguageCode || 'en') as LanguageCode,
-            defaultCurrencyCode: (input.defaultCurrencyCode || 'USD') as CurrencyCode,
+            defaultLanguageCode: languages.defaultLanguageCode,
+            availableLanguageCodes: languages.availableLanguageCodes,
+            defaultCurrencyCode: this.toCurrencyCode(input.defaultCurrencyCode || CurrencyCode.USD),
             pricesIncludeTax: input.pricesIncludeTax || false,
             defaultShippingZoneId: defaultChannelFull?.defaultShippingZone?.id ?? undefined!,
             defaultTaxZoneId: defaultChannelFull?.defaultTaxZone?.id ?? undefined!,
-            // customFields is typed as JSON in CreateChannelInput
-            customFields: { tenant, erpChannelId: input.erpChannelId } as any,
+            customFields: { tenant, erpChannelId: input.erpChannelId },
         });
 
         if (isGraphQlErrorResult(result)) {
@@ -356,6 +366,36 @@ export class TenantService {
         }
 
         return result;
+    }
+
+    private toCurrencyCode(requestedCode: string): CurrencyCode {
+        const currencyCode = Object.values(CurrencyCode).find((code) => code === requestedCode);
+        if (!currencyCode) throw new UserInputError(`"${requestedCode}" is not a Vendure currency code`);
+        return currencyCode;
+    }
+
+    // A store's languages, store language first. Vendure lets a channel use only languages that are
+    // switched on platform-wide (Settings › Global settings), so any that are not yet are added there.
+    private async enableStoreLanguages(
+        ctx: RequestContext,
+        defaultLanguageCode: string | undefined,
+        availableLanguageCodes: string[] | undefined,
+    ): Promise<{ defaultLanguageCode: LanguageCode; availableLanguageCodes: LanguageCode[] }> {
+        const requestedCodes = [...new Set([defaultLanguageCode || LanguageCode.en, ...(availableLanguageCodes ?? [])])];
+        const languageCodes = requestedCodes.map((requestedCode) => {
+            const languageCode = Object.values(LanguageCode).find((code) => code === requestedCode);
+            if (!languageCode) throw new UserInputError(`"${requestedCode}" is not a Vendure language code`);
+            return languageCode;
+        });
+        const settings = await this.globalSettingsService.getSettings(ctx);
+        const missingCodes = languageCodes.filter((code) => !settings.availableLanguages.includes(code));
+        if (missingCodes.length > 0) {
+            await this.globalSettingsService.updateSettings(ctx, {
+                availableLanguages: [...settings.availableLanguages, ...missingCodes],
+            });
+            Logger.info(`Switched on languages for a store: ${missingCodes.join(', ')}`, 'TenantService');
+        }
+        return { defaultLanguageCode: languageCodes[0], availableLanguageCodes: languageCodes };
     }
 
     async deleteChannel(ctx: RequestContext, erpChannelId: string) {
