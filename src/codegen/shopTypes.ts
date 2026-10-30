@@ -297,6 +297,73 @@ export type CollectionTranslation = {
   updatedAt: Scalars['DateTime']['output'];
 };
 
+export type Complaint = Node & {
+  __typename?: 'Complaint';
+  createdAt: Scalars['DateTime']['output'];
+  customer: Customer;
+  description: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  image?: Maybe<Asset>;
+  issueType: ComplaintIssueType;
+  order: Order;
+  status: ComplaintStatus;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export type ComplaintFilterParameter = {
+  _and?: InputMaybe<Array<ComplaintFilterParameter>>;
+  _or?: InputMaybe<Array<ComplaintFilterParameter>>;
+  createdAt?: InputMaybe<DateOperators>;
+  description?: InputMaybe<StringOperators>;
+  id?: InputMaybe<IdOperators>;
+  issueType?: InputMaybe<StringOperators>;
+  status?: InputMaybe<StringOperators>;
+  updatedAt?: InputMaybe<DateOperators>;
+};
+
+export enum ComplaintIssueType {
+  LATE_DELIVERY = 'LATE_DELIVERY',
+  MISSING_ITEM = 'MISSING_ITEM',
+  OTHER = 'OTHER',
+  PAYMENT_ISSUE = 'PAYMENT_ISSUE',
+  WRONG_OR_DAMAGED_ITEM = 'WRONG_OR_DAMAGED_ITEM',
+  WRONG_SIZE = 'WRONG_SIZE'
+}
+
+export type ComplaintList = PaginatedList & {
+  __typename?: 'ComplaintList';
+  items: Array<Complaint>;
+  totalItems: Scalars['Int']['output'];
+};
+
+export type ComplaintListOptions = {
+  /** Allows the results to be filtered */
+  filter?: InputMaybe<ComplaintFilterParameter>;
+  /** Specifies whether multiple top-level "filter" fields should be combined with a logical AND or OR operation. Defaults to AND. */
+  filterOperator?: InputMaybe<LogicalOperator>;
+  /** Skips the first n results, for use in pagination */
+  skip?: InputMaybe<Scalars['Int']['input']>;
+  /** Specifies which properties to sort the results by */
+  sort?: InputMaybe<ComplaintSortParameter>;
+  /** Takes n results, for use in pagination */
+  take?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type ComplaintSortParameter = {
+  createdAt?: InputMaybe<SortOrder>;
+  description?: InputMaybe<SortOrder>;
+  id?: InputMaybe<SortOrder>;
+  issueType?: InputMaybe<SortOrder>;
+  status?: InputMaybe<SortOrder>;
+  updatedAt?: InputMaybe<SortOrder>;
+};
+
+export enum ComplaintStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED'
+}
+
 export type ConfigArg = {
   __typename?: 'ConfigArg';
   name: Scalars['String']['output'];
@@ -439,6 +506,13 @@ export type CreateAddressInput = {
   province?: InputMaybe<Scalars['String']['input']>;
   streetLine1: Scalars['String']['input'];
   streetLine2?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateComplaintInput = {
+  description: Scalars['String']['input'];
+  image?: InputMaybe<Scalars['Upload']['input']>;
+  issueType: ComplaintIssueType;
+  orderId: Scalars['ID']['input'];
 };
 
 export type CreateCustomerInput = {
@@ -1898,6 +1972,7 @@ export type Mutation = {
   applyCouponCode: ApplyCouponCodeResult;
   /** Authenticates the user using a named authentication strategy */
   authenticate: AuthenticationResult;
+  createComplaint: Complaint;
   /** Create a new Customer Address */
   createCustomerAddress: Address;
   /** Delete an existing Address */
@@ -2044,6 +2119,11 @@ export type MutationApplyCouponCodeArgs = {
 export type MutationAuthenticateArgs = {
   input: AuthenticationInput;
   rememberMe?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type MutationCreateComplaintArgs = {
+  input: CreateComplaintInput;
 };
 
 
@@ -3392,6 +3472,7 @@ export type Query = {
   activeChannel: Channel;
   /** The active Customer */
   activeCustomer?: Maybe<Customer>;
+  activeCustomerComplaints: ComplaintList;
   activeCustomerWishlist: WishlistItems;
   /**
    * The active Order. Will be `null` until an Order is created via `addItemToOrder`. Once an Order reaches the
@@ -3450,6 +3531,11 @@ export type Query = {
   products: ProductList;
   /** Search Products based on the criteria set by the `SearchInput` */
   search: SearchResponse;
+};
+
+
+export type QueryActiveCustomerComplaintsArgs = {
+  options?: InputMaybe<ComplaintListOptions>;
 };
 
 

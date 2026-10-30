@@ -12,6 +12,7 @@ import { AssetServerPlugin, configureS3AssetStorage } from '@vendure/asset-serve
 import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import { TenantPlugin } from './plugins/tenant/tenant.plugin';
+import { ComplaintPlugin } from './plugins/complaint/complaint.plugin';
 import { FaqPlugin } from './plugins/faq/faq.plugin';
 import { ReviewsPlugin } from './plugins/reviews/reviews.plugin';
 import { WishlistPlugin } from './plugins/wishlist/wishlist.plugin';
@@ -111,5 +112,6 @@ export const config: VendureConfig = {
         WishlistPlugin,
         ReviewsPlugin,
         FaqPlugin.init({}),
+        ComplaintPlugin,
     ],
 };
