@@ -94,8 +94,12 @@ export interface SyncPromotionInput {
   itemGroups: string[];
   brands: string[];
   minOrderAmount: number;
+  /** An items promotion: the least quantity a matching line needs (0 for none). */
+  minQty: number;
   discountPercentage: number;
   discountAmount: number;
+  /** Also waives shipping, on every shipping method. The discount may then be 0. */
+  freeShipping: boolean;
   modified: Date;
 }
 

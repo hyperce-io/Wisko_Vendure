@@ -558,6 +558,9 @@ export class RabbitMQMessageHandler {
     }
     if (typeof payload.discount_percentage !== "number")
       throw new Error("discount_percentage must be a number");
+    // min_qty and free_shipping are absent from messages an older ERP queued before it sent them.
+    if (payload.min_qty !== undefined && typeof payload.min_qty !== "number")
+      throw new Error("min_qty must be a number");
     const input: SyncPromotionInput = {
       erpPromotionId: payload.erp_promotion_id,
       name: payload.name,
@@ -574,8 +577,10 @@ export class RabbitMQMessageHandler {
       itemGroups: payload.item_groups || [],
       brands: payload.brands || [],
       minOrderAmount: payload.min_order_amount,
+      minQty: payload.min_qty ?? 0,
       discountPercentage: payload.discount_percentage,
       discountAmount: payload.discount_amount,
+      freeShipping: payload.free_shipping === true,
       modified: new Date(payload.modified),
     };
     await this.promotionSyncService.syncPromotion(ctx, input);
