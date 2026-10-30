@@ -1,17 +1,20 @@
 import { Injectable } from "@nestjs/common";
 import {
-    Customer,
-    CustomerService,
-    ForbiddenError,
-    ID,
-    InternalServerError,
-    ProductService,
-    RequestContext,
-    TransactionalConnection,
-    UserInputError,
+  Customer,
+  CustomerService,
+  ForbiddenError,
+  ID,
+  InternalServerError,
+  ListQueryBuilder,
+  PaginatedList,
+  ProductService,
+  RequestContext,
+  TransactionalConnection,
+  UserInputError,
 } from "@vendure/core";
+import { In } from "typeorm";
 
-import { WishlistItemsListOptions } from "../../../codegen/shopTypes";
+import { WishlistItemListOptions } from "../../../codegen/shopTypes";
 import { WishlistItem } from "../entities/wishlist-item.entity";
 
 @Injectable()
@@ -20,6 +23,7 @@ export class WishlistService {
     private connection: TransactionalConnection,
     private productService: ProductService,
     private customerService: CustomerService,
+    private listQueryBuilder: ListQueryBuilder,
   ) {}
 
   async wishlistID(ctx: RequestContext, productId: ID) {
@@ -67,13 +71,23 @@ export class WishlistService {
 
   async getPaginatedWishlist(
     ctx: RequestContext,
-    options?: WishlistItemsListOptions,
-  ): Promise<{ items: WishlistItem[]; totalItems: number }> {
-    const all = await this.getWishlistItems(ctx);
-    const totalItems = all.length;
-    const skip = Math.max(0, options?.skip ?? 0);
-    const take = options?.take ?? totalItems;
-    const items = all.slice(skip, skip + Math.max(0, take));
+    options?: WishlistItemListOptions,
+  ): Promise<PaginatedList<WishlistItem>> {
+    // A WishlistItem has no relation back to its customer (the customer holds them through a custom
+    // field), so the list is limited to the active customer's item ids.
+    const wishlistItemIds = (await this.getWishlistItems(ctx)).map(
+      (item) => item.id,
+    );
+    if (wishlistItemIds.length === 0) {
+      return { items: [], totalItems: 0 };
+    }
+    const [items, totalItems] = await this.listQueryBuilder
+      .build(WishlistItem, options, {
+        where: { id: In(wishlistItemIds) },
+        relations: ["product"],
+        ctx,
+      })
+      .getManyAndCount();
     return { items, totalItems };
   }
 
