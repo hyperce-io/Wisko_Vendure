@@ -13,6 +13,7 @@ import {
   RequestContext,
   TransactionalConnection,
   UserInputError,
+  freeShipping,
   idsAreEqual,
   isGraphQlErrorResult,
   minimumOrderAmount,
@@ -171,6 +172,7 @@ export class PromotionSyncService {
             { name: "skus", value: JSON.stringify(input.skus) },
             { name: "itemGroups", value: JSON.stringify(input.itemGroups) },
             { name: "brands", value: JSON.stringify(input.brands) },
+            { name: "minQuantity", value: String(input.minQty) },
           ],
         },
       ];
@@ -188,7 +190,19 @@ export class PromotionSyncService {
     ];
   }
 
+  /**
+   * The discount, then free shipping. Vendure's freeShipping action waives every shipping line,
+   * and only runs once all the promotion's conditions pass (e.g. the minimum order amount).
+   */
   private actionsFor(input: SyncPromotionInput): ConfigurableOperationInput[] {
+    const hasDiscount = input.discountPercentage > 0 || input.discountAmount > 0;
+    return [
+      ...(hasDiscount ? this.discountActionsFor(input) : []),
+      ...(input.freeShipping ? [{ code: freeShipping.code, arguments: [] }] : []),
+    ];
+  }
+
+  private discountActionsFor(input: SyncPromotionInput): ConfigurableOperationInput[] {
     if (input.applyOn === "items") {
       return [
         {

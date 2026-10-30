@@ -37,14 +37,22 @@ export const erpItemsCondition = new PromotionCondition({
       list: true,
       label: [{ languageCode: LanguageCode.en, value: "ERP brands" }],
     },
+    minQuantity: {
+      type: "float",
+      label: [{ languageCode: LanguageCode.en, value: "Minimum quantity per line" }],
+    },
   },
   check(ctx, order, args) {
+    // ERPNext's Min Qty is per line: a line with fewer units does not match. A promotion saved
+    // before this argument existed has none stored, so Vendure passes undefined until the next sync.
+    const minQuantity = args.minQuantity ?? 0;
     const isMatch = (line: OrderLine) =>
-      args.skus.includes(line.productVariant.sku) ||
-      (line.productVariant.customFields.erpItemGroups ?? []).some((group) =>
-        args.itemGroups.includes(group),
-      ) ||
-      args.brands.includes(line.productVariant.customFields.erpBrand ?? "");
+      line.quantity >= minQuantity &&
+      (args.skus.includes(line.productVariant.sku) ||
+        (line.productVariant.customFields.erpItemGroups ?? []).some((group) =>
+          args.itemGroups.includes(group),
+        ) ||
+        args.brands.includes(line.productVariant.customFields.erpBrand ?? ""));
     const lineIds = order.lines.filter(isMatch).map((line) => String(line.id));
     return lineIds.length ? { lineIds } : false;
   },
