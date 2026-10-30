@@ -22,77 +22,82 @@ calls return empty/forbidden, and `Product.isInWishlist` is simply `false`.
 // lib/shop.ts
 const SHOP_API = process.env.NEXT_PUBLIC_SHOP_API_URL!; // http://localhost:3000/shop-api
 
-export async function shopFetch<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    const res = await fetch(SHOP_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, // no channel token → default channel
-        credentials: 'include', // sends the customer session cookie
-        cache: 'no-store',
-        body: JSON.stringify({ query, variables }),
-    });
-    const json = await res.json();
-    if (json.errors) throw new Error(json.errors[0].message);
-    return json.data as T;
+export async function shopFetch<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch(SHOP_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }, // no channel token → default channel
+    credentials: "include", // sends the customer session cookie
+    cache: "no-store",
+    body: JSON.stringify({ query, variables }),
+  });
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message);
+  return json.data as T;
 }
 ```
 
 ## What the Shop API exposes
 
-**Query** — a **paginated list** (`WishlistItems`) with optional `skip`/`take`:
+**Query** — a standard Vendure **paginated list** (`WishlistItemList`) taking `WishlistItemListOptions`
+(`skip`, `take`, `sort`, `filter`):
 
 ```graphql
-query ActiveCustomerWishlist($options: WishlistPaginationOptions) {
-    activeCustomerWishlist(options: $options) {
-        totalItems
-        items {
-            id
-            productId
-            product {
-                id
-                name
-                slug
-                featuredAsset {
-                    preview
-                }
-            }
+query ActiveCustomerWishlist($options: WishlistItemListOptions) {
+  activeCustomerWishlist(options: $options) {
+    totalItems
+    items {
+      id
+      productId
+      product {
+        id
+        name
+        slug
+        featuredAsset {
+          preview
         }
+      }
     }
+  }
 }
 ```
 
 ```jsonc
-// variables — omit `options` to get the whole wishlist
-{ "options": { "skip": 0, "take": 20 } }
+// variables — newest first, 20 per page
+{ "options": { "skip": 0, "take": 20, "sort": { "createdAt": "DESC" } } }
 ```
 
 `totalItems` is the full wishlist count (for page controls); `items` is the requested page.
-Omitting `options` (or `take`) returns all items.
+`sort` and `filter` accept `id`, `createdAt`, `updatedAt` and `productId`. Omitting `take` returns
+up to Vendure's shop list limit (100 by default), so pass `take` for wishlists that may be longer.
 
 **Mutations**
 
 ```graphql
 mutation AddToWishlist($productId: ID!) {
-    addToWishlist(productId: $productId) {
-        # returns the full updated list
-        id
-        productId
-        product {
-            id
-            name
-            slug
-        }
+  addToWishlist(productId: $productId) {
+    # returns the full updated list
+    id
+    productId
+    product {
+      id
+      name
+      slug
     }
+  }
 }
 
 mutation RemoveFromWishlist($productId: ID!) {
-    removeFromWishlist(productId: $productId) {
-        success
-        message
-        items {
-            id
-            productId
-        }
+  removeFromWishlist(productId: $productId) {
+    success
+    message
+    items {
+      id
+      productId
     }
+  }
 }
 ```
 
@@ -100,12 +105,12 @@ mutation RemoveFromWishlist($productId: ID!) {
 
 ```graphql
 query Product($slug: String!) {
-    product(slug: $slug) {
-        id
-        name
-        isInWishlist # Boolean! — is this product in the current customer's wishlist
-        wishListId # ID — the wishlist item id (null if not wishlisted)
-    }
+  product(slug: $slug) {
+    id
+    name
+    isInWishlist # Boolean! — is this product in the current customer's wishlist
+    wishListId # ID — the wishlist item id (null if not wishlisted)
+  }
 }
 ```
 
@@ -122,35 +127,41 @@ query Product($slug: String!) {
 
 ```tsx
 // components/WishlistButton.tsx
-'use client';
-import { useState } from 'react';
-import { shopFetch } from '@/lib/shop';
+"use client";
+import { useState } from "react";
+import { shopFetch } from "@/lib/shop";
 
 const ADD = /* graphql */ `mutation($id: ID!){ addToWishlist(productId: $id){ id } }`;
 const REMOVE = /* graphql */ `mutation($id: ID!){ removeFromWishlist(productId: $id){ success } }`;
 
-export function WishlistButton({ productId, initialIn }: { productId: string; initialIn: boolean }) {
-    const [inList, setInList] = useState(initialIn);
-    const [busy, setBusy] = useState(false);
+export function WishlistButton({
+  productId,
+  initialIn,
+}: {
+  productId: string;
+  initialIn: boolean;
+}) {
+  const [inList, setInList] = useState(initialIn);
+  const [busy, setBusy] = useState(false);
 
-    async function toggle() {
-        setBusy(true);
-        const next = !inList;
-        setInList(next); // optimistic
-        try {
-            await shopFetch(next ? ADD : REMOVE, { id: productId });
-        } catch {
-            setInList(!next); // revert on error (e.g. not logged in)
-        } finally {
-            setBusy(false);
-        }
+  async function toggle() {
+    setBusy(true);
+    const next = !inList;
+    setInList(next); // optimistic
+    try {
+      await shopFetch(next ? ADD : REMOVE, { id: productId });
+    } catch {
+      setInList(!next); // revert on error (e.g. not logged in)
+    } finally {
+      setBusy(false);
     }
+  }
 
-    return (
-        <button onClick={toggle} disabled={busy} aria-pressed={inList}>
-            {inList ? '♥ In wishlist' : '♡ Add to wishlist'}
-        </button>
-    );
+  return (
+    <button onClick={toggle} disabled={busy} aria-pressed={inList}>
+      {inList ? "♥ In wishlist" : "♡ Add to wishlist"}
+    </button>
+  );
 }
 ```
 
@@ -161,10 +172,10 @@ first paint.
 
 ```tsx
 // app/account/wishlist/page.tsx
-import { shopFetch } from '@/lib/shop';
+import { shopFetch } from "@/lib/shop";
 
 const QUERY = /* graphql */ `
-  query ($options: WishlistPaginationOptions) {
+  query ($options: WishlistItemListOptions) {
     activeCustomerWishlist(options: $options) {
       totalItems
       items { id productId product { name slug featuredAsset { preview } } }
@@ -173,23 +184,23 @@ const QUERY = /* graphql */ `
 `;
 
 export default async function WishlistPage() {
-    const { activeCustomerWishlist } = await shopFetch<{
-        activeCustomerWishlist: { totalItems: number; items: any[] };
-    }>(QUERY, { options: { skip: 0, take: 20 } });
-    const { items, totalItems } = activeCustomerWishlist;
-    if (!totalItems) return <p>Your wishlist is empty.</p>;
-    return (
-        <ul>
-            {items.map(i => (
-                <li key={i.id}>
-                    <a href={`/product/${i.product.slug}`}>
-                        <img src={i.product.featuredAsset?.preview} alt={i.product.name} />
-                        {i.product.name}
-                    </a>
-                </li>
-            ))}
-        </ul>
-    );
+  const { activeCustomerWishlist } = await shopFetch<{
+    activeCustomerWishlist: { totalItems: number; items: any[] };
+  }>(QUERY, { options: { skip: 0, take: 20 } });
+  const { items, totalItems } = activeCustomerWishlist;
+  if (!totalItems) return <p>Your wishlist is empty.</p>;
+  return (
+    <ul>
+      {items.map((i) => (
+        <li key={i.id}>
+          <a href={`/product/${i.product.slug}`}>
+            <img src={i.product.featuredAsset?.preview} alt={i.product.name} />
+            {i.product.name}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
 }
 ```
 

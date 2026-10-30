@@ -3473,7 +3473,7 @@ export type Query = {
   /** The active Customer */
   activeCustomer?: Maybe<Customer>;
   activeCustomerComplaints: ComplaintList;
-  activeCustomerWishlist: WishlistItems;
+  activeCustomerWishlist: WishlistItemList;
   /**
    * The active Order. Will be `null` until an Order is created via `addItemToOrder`. Once an Order reaches the
    * state of `PaymentAuthorized` or `PaymentSettled`, then that Order is no longer considered "active" and this
@@ -3540,7 +3540,7 @@ export type QueryActiveCustomerComplaintsArgs = {
 
 
 export type QueryActiveCustomerWishlistArgs = {
-  options?: InputMaybe<WishlistItemsListOptions>;
+  options?: InputMaybe<WishlistItemListOptions>;
 };
 
 
@@ -4175,38 +4175,39 @@ export type WishlistItem = Node & {
   updatedAt: Scalars['DateTime']['output'];
 };
 
-export type WishlistItems = PaginatedList & {
-  __typename?: 'WishlistItems';
+export type WishlistItemFilterParameter = {
+  _and?: InputMaybe<Array<WishlistItemFilterParameter>>;
+  _or?: InputMaybe<Array<WishlistItemFilterParameter>>;
+  createdAt?: InputMaybe<DateOperators>;
+  id?: InputMaybe<IdOperators>;
+  productId?: InputMaybe<IdOperators>;
+  updatedAt?: InputMaybe<DateOperators>;
+};
+
+export type WishlistItemList = PaginatedList & {
+  __typename?: 'WishlistItemList';
   items: Array<WishlistItem>;
   totalItems: Scalars['Int']['output'];
 };
 
-export type WishlistItemsFilterParameter = {
-  _and?: InputMaybe<Array<WishlistItemsFilterParameter>>;
-  _or?: InputMaybe<Array<WishlistItemsFilterParameter>>;
-  totalItems?: InputMaybe<NumberOperators>;
-};
-
-export type WishlistItemsListOptions = {
+export type WishlistItemListOptions = {
   /** Allows the results to be filtered */
-  filter?: InputMaybe<WishlistItemsFilterParameter>;
+  filter?: InputMaybe<WishlistItemFilterParameter>;
   /** Specifies whether multiple top-level "filter" fields should be combined with a logical AND or OR operation. Defaults to AND. */
   filterOperator?: InputMaybe<LogicalOperator>;
   /** Skips the first n results, for use in pagination */
   skip?: InputMaybe<Scalars['Int']['input']>;
   /** Specifies which properties to sort the results by */
-  sort?: InputMaybe<WishlistItemsSortParameter>;
+  sort?: InputMaybe<WishlistItemSortParameter>;
   /** Takes n results, for use in pagination */
   take?: InputMaybe<Scalars['Int']['input']>;
 };
 
-export type WishlistItemsSortParameter = {
-  totalItems?: InputMaybe<SortOrder>;
-};
-
-export type WishlistPaginationOptions = {
-  skip?: InputMaybe<Scalars['Int']['input']>;
-  take?: InputMaybe<Scalars['Int']['input']>;
+export type WishlistItemSortParameter = {
+  createdAt?: InputMaybe<SortOrder>;
+  id?: InputMaybe<SortOrder>;
+  productId?: InputMaybe<SortOrder>;
+  updatedAt?: InputMaybe<SortOrder>;
 };
 
 export type WishlistResponse = {
