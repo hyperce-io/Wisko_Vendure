@@ -90,12 +90,14 @@ export const config: VendureConfig = {
             handlers: defaultEmailHandlers,
             templateLoader: new FileBasedTemplateLoader(path.join(__dirname, '../static/email/templates')),
             globalTemplateVars: {
-                // The following variables will change depending on your storefront implementation.
-                // Here we are assuming a storefront running at http://localhost:8080.
+                // Links in customer emails point at the storefront; set these per environment.
+                // The localhost defaults match a storefront running locally on port 8080.
                 fromAddress: '"example" <noreply@example.com>',
-                verifyEmailAddressUrl: 'http://localhost:8080/verify',
-                passwordResetUrl: 'http://localhost:8080/password-reset',
-                changeEmailAddressUrl: 'http://localhost:8080/verify-email-address-change'
+                verifyEmailAddressUrl: process.env.VERIFY_EMAIL_URL || 'http://localhost:8080/verify',
+                passwordResetUrl: process.env.PASSWORD_RESET_URL || 'http://localhost:8080/password-reset',
+                changeEmailAddressUrl:
+                    process.env.CHANGE_EMAIL_URL || 'http://localhost:8080/verify-email-address-change',
+                adminUrl: process.env.ADMIN_URL || `http://localhost:${serverPort}/dashboard`,
             },
         }),
         DashboardPlugin.init({
