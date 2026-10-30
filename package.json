@@ -14,7 +14,11 @@
     "start:server": "node ./dist/index.js",
     "start:worker": "node ./dist/index-worker.js",
     "start": "vendure start all",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "migration:generate": "vendure migrate --generate",
+    "migration:run": "vendure migrate --run",
+    "migration:revert": "vendure migrate --revert",
+    "codegen": "graphql-codegen --config codegen.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
@@ -30,6 +34,10 @@
     "pg": "8.22.0"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^6.2.1",
+    "@graphql-codegen/typed-document-node": "^6.1.7",
+    "@graphql-codegen/typescript": "^5.0.9",
+    "@graphql-codegen/typescript-operations": "^5.0.9",
     "@types/amqplib": "^0.10.8",
     "@vendure/cli": "3.7.1",
     "@vendure/create": "^3.7.1",

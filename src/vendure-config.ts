@@ -12,6 +12,7 @@ import { AssetServerPlugin, configureS3AssetStorage } from '@vendure/asset-serve
 import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import { TenantPlugin } from './plugins/tenant/tenant.plugin';
+import { WishlistPlugin } from './plugins/wishlist/wishlist.plugin';
 import 'dotenv/config';
 import path from 'path';
 
@@ -110,5 +111,6 @@ export const config: VendureConfig = {
                 : path.join(__dirname, 'dashboard'),
         }),
         TenantPlugin,
+        WishlistPlugin,
     ],
 };
