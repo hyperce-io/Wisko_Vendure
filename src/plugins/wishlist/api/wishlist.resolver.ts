@@ -18,8 +18,8 @@ import {
 import {
     MutationAddToWishlistArgs,
     MutationRemoveFromWishlistArgs,
-} from "src/codegen/adminTypes";
-import { QueryActiveCustomerWishlistArgs } from "src/codegen/shopTypes";
+    QueryActiveCustomerWishlistArgs,
+} from "../../../codegen/shopTypes";
 import { WishlistService } from "../service/wishlist.service";
 
 @Resolver("Product")

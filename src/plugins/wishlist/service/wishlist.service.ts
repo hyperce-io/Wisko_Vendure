@@ -11,6 +11,7 @@ import {
     UserInputError,
 } from "@vendure/core";
 
+import { WishlistItemsListOptions } from "../../../codegen/shopTypes";
 import { WishlistItem } from "../entities/wishlist-item.entity";
 
 @Injectable()
@@ -66,7 +67,7 @@ export class WishlistService {
 
   async getPaginatedWishlist(
     ctx: RequestContext,
-    options?: { skip?: number; take?: number },
+    options?: WishlistItemsListOptions,
   ): Promise<{ items: WishlistItem[]; totalItems: number }> {
     const all = await this.getWishlistItems(ctx);
     const totalItems = all.length;
