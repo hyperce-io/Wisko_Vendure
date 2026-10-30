@@ -717,6 +717,76 @@ export type CompanyList = {
   totalItems: Scalars['Int']['output'];
 };
 
+export type Complaint = Node & {
+  __typename?: 'Complaint';
+  adminNote?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  customer: Customer;
+  description: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  image?: Maybe<Asset>;
+  issueType: ComplaintIssueType;
+  order: Order;
+  status: ComplaintStatus;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export type ComplaintFilterParameter = {
+  _and?: InputMaybe<Array<ComplaintFilterParameter>>;
+  _or?: InputMaybe<Array<ComplaintFilterParameter>>;
+  adminNote?: InputMaybe<StringOperators>;
+  createdAt?: InputMaybe<DateOperators>;
+  description?: InputMaybe<StringOperators>;
+  id?: InputMaybe<IdOperators>;
+  issueType?: InputMaybe<StringOperators>;
+  status?: InputMaybe<StringOperators>;
+  updatedAt?: InputMaybe<DateOperators>;
+};
+
+export enum ComplaintIssueType {
+  LATE_DELIVERY = 'LATE_DELIVERY',
+  MISSING_ITEM = 'MISSING_ITEM',
+  OTHER = 'OTHER',
+  PAYMENT_ISSUE = 'PAYMENT_ISSUE',
+  WRONG_OR_DAMAGED_ITEM = 'WRONG_OR_DAMAGED_ITEM',
+  WRONG_SIZE = 'WRONG_SIZE'
+}
+
+export type ComplaintList = PaginatedList & {
+  __typename?: 'ComplaintList';
+  items: Array<Complaint>;
+  totalItems: Scalars['Int']['output'];
+};
+
+export type ComplaintListOptions = {
+  /** Allows the results to be filtered */
+  filter?: InputMaybe<ComplaintFilterParameter>;
+  /** Specifies whether multiple top-level "filter" fields should be combined with a logical AND or OR operation. Defaults to AND. */
+  filterOperator?: InputMaybe<LogicalOperator>;
+  /** Skips the first n results, for use in pagination */
+  skip?: InputMaybe<Scalars['Int']['input']>;
+  /** Specifies which properties to sort the results by */
+  sort?: InputMaybe<ComplaintSortParameter>;
+  /** Takes n results, for use in pagination */
+  take?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type ComplaintSortParameter = {
+  adminNote?: InputMaybe<SortOrder>;
+  createdAt?: InputMaybe<SortOrder>;
+  description?: InputMaybe<SortOrder>;
+  id?: InputMaybe<SortOrder>;
+  issueType?: InputMaybe<SortOrder>;
+  status?: InputMaybe<SortOrder>;
+  updatedAt?: InputMaybe<SortOrder>;
+};
+
+export enum ComplaintStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED'
+}
+
 export type ConfigArg = {
   __typename?: 'ConfigArg';
   name: Scalars['String']['output'];
@@ -3443,6 +3513,7 @@ export type Mutation = {
   /** Update an existing Collection */
   updateCollection: Collection;
   updateCompany: Company;
+  updateComplaint: Complaint;
   /** Update an existing Country */
   updateCountry: Country;
   /** Update an existing Customer */
@@ -4369,6 +4440,11 @@ export type MutationUpdateCollectionArgs = {
 
 export type MutationUpdateCompanyArgs = {
   input: UpdateCompanyInput;
+};
+
+
+export type MutationUpdateComplaintArgs = {
+  input: UpdateComplaintInput;
 };
 
 
@@ -6121,6 +6197,8 @@ export type Query = {
   collections: CollectionList;
   companies: CompanyList;
   company?: Maybe<Company>;
+  complaint?: Maybe<Complaint>;
+  complaints: ComplaintList;
   countries: CountryList;
   country?: Maybe<Country>;
   customer?: Maybe<Customer>;
@@ -6275,6 +6353,16 @@ export type QueryCollectionsArgs = {
 
 export type QueryCompanyArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryComplaintArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryComplaintsArgs = {
+  options?: InputMaybe<ComplaintListOptions>;
 };
 
 
@@ -7868,6 +7956,12 @@ export type UpdateCompanyInput = {
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
   id: Scalars['ID']['input'];
   name?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateComplaintInput = {
+  adminNote?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  status?: InputMaybe<ComplaintStatus>;
 };
 
 export type UpdateCountryInput = {
