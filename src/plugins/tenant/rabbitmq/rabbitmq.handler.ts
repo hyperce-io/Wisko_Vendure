@@ -298,6 +298,7 @@ export class RabbitMQMessageHandler {
       enabled: product.enabled,
       variants: product.variants || [],
       channelCodes: product.channelCodes,
+      renamedSkus: product.renamedSkus,
     };
     await this.productSyncService.syncProduct(ctx, input);
   }

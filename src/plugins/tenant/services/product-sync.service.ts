@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { GlobalFlag } from "@vendure/common/lib/generated-types";
+import { DeletionResult, GlobalFlag } from "@vendure/common/lib/generated-types";
 import { normalizeString } from "@vendure/common/lib/normalize-string";
 import { DEFAULT_CHANNEL_CODE } from "@vendure/common/lib/shared-constants";
 import { unique } from "@vendure/common/lib/unique";
@@ -22,7 +22,11 @@ import {
   UserInputError,
 } from "@vendure/core";
 import "../types";
-import { ProductVariantInput, SyncProductInput } from "../types";
+import {
+  ProductSkuRename,
+  ProductVariantInput,
+  SyncProductInput,
+} from "../types";
 import { ensureChannelStockLocation } from "./channel-stock-location";
 import { TaxCategorySyncService } from "./tax-category-sync.service";
 
@@ -70,6 +74,13 @@ export class ProductSyncService {
         product.id,
         variants,
         optionIdsByKey,
+        input.renamedSkus || [],
+      );
+      await this.removeUnusedOptions(
+        txCtx,
+        product.id,
+        input.erpProductId,
+        variants,
       );
 
       if (input.channelCodes?.length) {
@@ -142,12 +153,16 @@ export class ProductSyncService {
    * Updates the product's variants that already exist (matched by SKU within this product), creates
    * the rest, and soft-deletes the ones the ERP no longer has (a deleted ERP variant). Returns every
    * variant's id by SKU.
+   *
+   * A variant the ERP renamed (`renamedSkus`, e.g. after an attribute abbreviation change) first
+   * gets its new SKU, so it is matched and kept, with its id, rather than deleted and recreated.
    */
   private async upsertVariants(
     ctx: RequestContext,
     productId: ID,
     variants: ProductVariantInput[],
     optionIdsByKey: Map<string, ID>,
+    renamedSkus: ProductSkuRename[],
   ): Promise<Map<string, ID>> {
     const { items: existingVariants } =
       await this.productVariantService.getVariantsByProductId(
@@ -157,6 +172,25 @@ export class ProductSyncService {
         ["options"],
       );
     const variantIdsBySku = new Map<string, ID>();
+
+    for (const rename of renamedSkus) {
+      const renamedVariant = existingVariants.find(
+        (variant) => variant.sku === rename.oldSku,
+      );
+      if (
+        !renamedVariant ||
+        existingVariants.some((variant) => variant.sku === rename.newSku)
+      )
+        continue;
+      await this.productVariantService.update(ctx, [
+        { id: renamedVariant.id, sku: rename.newSku },
+      ]);
+      renamedVariant.sku = rename.newSku;
+      Logger.info(
+        `Renamed variant SKU: ${rename.oldSku} -> ${rename.newSku}`,
+        "ProductSync",
+      );
+    }
 
     // First, so a new variant with a removed one's options is not refused as a duplicate.
     const erpSkus = new Set(variants.map((variantInput) => variantInput.sku));
@@ -290,7 +324,7 @@ export class ProductSyncService {
       const groupOptions = variantOptions.filter(
         (option) => option.group === group,
       );
-      const groupCode = normalizeString(`erp-${erpProductId}-${group}`, "-");
+      const groupCode = this.getOptionGroupCode(erpProductId, group);
       let optionGroup = productGroups.find(
         (productGroup) => productGroup.code === groupCode,
       );
@@ -338,6 +372,59 @@ export class ProductSyncService {
       }
     }
     return optionIdsByKey;
+  }
+
+  /**
+   * Removes the options in this product's ERP option groups that no ERP variant uses any more: the
+   * old value of a renamed ERP attribute value, which ensureVariantOptions replaced with a new
+   * option and upsertVariants moved the variants onto. Left in place, it would still be offered on
+   * the storefront with no variant behind it. Vendure's own delete keeps an option a live variant
+   * still uses.
+   */
+  private async removeUnusedOptions(
+    ctx: RequestContext,
+    productId: ID,
+    erpProductId: string,
+    variants: ProductVariantInput[],
+  ): Promise<void> {
+    const usedCodesByGroupCode = new Map<string, Set<string>>();
+    for (const option of variants.flatMap(
+      (variantInput) => variantInput.options || [],
+    )) {
+      const groupCode = this.getOptionGroupCode(erpProductId, option.group);
+      const usedCodes = usedCodesByGroupCode.get(groupCode) ?? new Set<string>();
+      usedCodes.add(normalizeString(option.value, "-"));
+      usedCodesByGroupCode.set(groupCode, usedCodes);
+    }
+    if (!usedCodesByGroupCode.size) return;
+
+    const productGroups =
+      await this.productOptionGroupService.getOptionGroupsByProductId(
+        ctx,
+        productId,
+      );
+    for (const optionGroup of productGroups) {
+      const usedCodes = usedCodesByGroupCode.get(optionGroup.code);
+      if (!usedCodes) continue;
+      for (const option of optionGroup.options || []) {
+        if (option.deletedAt || usedCodes.has(option.code)) continue;
+        const { result } = await this.productOptionService.delete(
+          ctx,
+          option.id,
+        );
+        if (result === DeletionResult.DELETED) {
+          Logger.info(
+            `Removed unused option: ${optionGroup.code}/${option.code}`,
+            "ProductSync",
+          );
+        }
+      }
+    }
+  }
+
+  /** Groups are coded per product; see ensureVariantOptions. */
+  private getOptionGroupCode(erpProductId: string, group: string): string {
+    return normalizeString(`erp-${erpProductId}-${group}`, "-");
   }
 
   /** Option codes are only unique within their group, so the key carries both. */

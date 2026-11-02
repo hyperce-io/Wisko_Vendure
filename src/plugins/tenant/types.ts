@@ -214,6 +214,13 @@ export interface SyncProductInput {
   enabled?: boolean;
   variants: ProductVariantInput[];
   channelCodes?: string[];
+  /** ERP variants whose item code (SKU) changed; renamed in place, before variants are matched by SKU. */
+  renamedSkus?: ProductSkuRename[];
+}
+
+export interface ProductSkuRename {
+  oldSku: string;
+  newSku: string;
 }
 
 // ---- Product content (from Strapi) input types ----

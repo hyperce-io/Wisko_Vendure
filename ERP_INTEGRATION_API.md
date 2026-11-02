@@ -273,10 +273,13 @@ Update product details + variant prices/stock. Matched by `erpProductId`. Varian
         "price": 11999,
         "stockOnHand": 200
       }
-    ]
+    ],
+    "renamedSkus": [{ "oldSku": "AM90-BK-10", "newSku": "AM90-BLK-10" }]
   }
 }
 ```
+
+`renamedSkus` is optional. It lists variants whose ERP item code changed (for example after an attribute abbreviation change). Each existing variant with `oldSku` is given `newSku` before variants are matched, so it keeps its Vendure variant instead of being deleted and recreated. Options of the product's ERP option groups that no variant uses any more (the old value of a renamed attribute value) are removed.
 
 ### product.deleted (soft delete)
 
