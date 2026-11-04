@@ -137,10 +137,11 @@ export class ProductSyncService {
       );
       return created;
     }
-    // Name and description are Strapi's after create (ProductContentSyncService).
+    // The ERP owns the name; description and the other content are Strapi's (ProductContentSyncService).
     await this.productService.update(ctx, {
       id: existing.id,
       enabled: input.enabled,
+      translations: [{ languageCode: LanguageCode.en, name: input.name }],
     });
     Logger.info(
       `Updated product: ${input.name} (erp: ${input.erpProductId})`,
@@ -257,6 +258,9 @@ export class ProductSyncService {
             stockOnHand: variantInput.stockOnHand,
             trackInventory,
             enabled: variantInput.enabled,
+            translations: [
+              { languageCode: LanguageCode.en, name: variantInput.name },
+            ],
             taxCategoryId,
             customFields,
           },
@@ -273,7 +277,6 @@ export class ProductSyncService {
             stockOnHand: variantInput.stockOnHand ?? 0,
             trackInventory,
             enabled: variantInput.enabled !== false,
-            // Strapi's after create, like the product's name.
             translations: [
               { languageCode: LanguageCode.en, name: variantInput.name },
             ],
