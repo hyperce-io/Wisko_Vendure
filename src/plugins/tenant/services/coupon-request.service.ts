@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import { DeletionResult } from "@vendure/common/lib/generated-types";
 import { randomInt } from "crypto";
+import { IsNull, LessThan, Not } from "typeorm";
 import {
   Channel,
   CustomerService,
@@ -8,6 +10,7 @@ import {
   Promotion,
   PromotionService,
   RequestContext,
+  ScheduledTask,
   TransactionalConnection,
   UserInputError,
   idsAreEqual,
@@ -23,6 +26,7 @@ const COUPON_PREFIXES: Record<string, string> = { birthday: "BDAY" };
 const COUPON_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const COUPON_RANDOM_LENGTH = 6;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPIRED_PAGE_SIZE = 100;
 
 type CouponOutcome = { promotion: Promotion } | { failureReason: string };
 
@@ -154,6 +158,38 @@ export class CouponRequestService {
     return { promotion: result };
   }
 
+  /**
+   * Removes the personal coupons this service made once their end date has passed, used or not, so
+   * a promotion per birthday does not pile up. Soft-deleted the Vendure way: orders keep their
+   * discount. Promotions staff created are never touched (they have no couponRequestKey).
+   */
+  async removeExpiredCoupons(ctx: RequestContext, now: Date): Promise<number> {
+    let removedCount = 0;
+    let expiredCoupons: Promotion[];
+    // Batched: a removed coupon leaves the query, so the first page is read again until none is left.
+    do {
+      expiredCoupons = await this.connection.getRepository(ctx, Promotion).find({
+        where: {
+          endsAt: LessThan(now),
+          deletedAt: IsNull(),
+          customFields: { couponRequestKey: Not(IsNull()) },
+        },
+        order: { id: "ASC" },
+        take: EXPIRED_PAGE_SIZE,
+      });
+      for (const coupon of expiredCoupons) {
+        const deletion = await this.promotionService.softDeletePromotion(ctx, coupon.id);
+        if (deletion.result !== DeletionResult.DELETED) {
+          throw new UserInputError(`Coupon ${coupon.couponCode} could not be removed: ${deletion.message}`);
+        }
+      }
+      removedCount += expiredCoupons.length;
+    } while (expiredCoupons.length === EXPIRED_PAGE_SIZE);
+
+    Logger.info(`Removed ${removedCount} expired coupon(s)`, "CouponRequest");
+    return removedCount;
+  }
+
   private async generateUnusedCouponCode(ctx: RequestContext, prefix: string): Promise<string> {
     const couponCode = `${prefix}-${generateCouponSuffix()}`;
     const isTaken = await this.connection
@@ -177,3 +213,15 @@ export function discountPercentOf(promotion: Promotion): number {
     ?.args.find((arg) => arg.name === "discount");
   return Number(discount?.value);
 }
+
+export const expiredCouponCleanupTask = new ScheduledTask({
+  id: "wisko-expired-coupon-cleanup",
+  description: "Remove personal coupons (e.g. birthday) whose end date has passed, used or not",
+  schedule: (cron) => cron.every(1).hours(),
+  async execute({ injector, scheduledContext }) {
+    const removedCount = await injector
+      .get(CouponRequestService)
+      .removeExpiredCoupons(scheduledContext, new Date());
+    return { removedCount };
+  },
+});
