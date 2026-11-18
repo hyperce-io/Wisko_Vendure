@@ -6,6 +6,7 @@ import {
     RABBITMQ_QUEUE,
     RABBITMQ_DLX_EXCHANGE,
     RABBITMQ_DLQ,
+    ROUTING_KEYS,
 } from './rabbitmq.constants';
 import { RabbitMQMessageHandler } from './rabbitmq.handler';
 
@@ -98,6 +99,8 @@ export class RabbitMQConsumer implements OnApplicationBootstrap, OnApplicationSh
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'b2b_customer.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'promotion.*');
             await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, 'sync.*');
+            await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, ROUTING_KEYS.COUPON_REQUESTED);
+            await ch.bindQueue(RABBITMQ_QUEUE, RABBITMQ_EXCHANGE, ROUTING_KEYS.PRIVACY_ERASURE_REQUESTED);
 
             await ch.prefetch(1);
 

@@ -59,6 +59,7 @@ export class RabbitMQPublisher implements OnApplicationShutdown {
                 persistent: true,
                 contentType: 'application/json',
                 timestamp: Math.floor(Date.now() / 1000),
+                headers: { 'x-retry-count': 0 },
             });
             Logger.info(`Published: ${routingKey}`, 'RabbitMQPublisher');
             return true;

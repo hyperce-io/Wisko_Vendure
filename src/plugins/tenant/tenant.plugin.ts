@@ -12,11 +12,16 @@ import { TenantAdminResolver } from "./api/tenant-admin.resolver";
 import { TenantShopResolver } from "./api/tenant-shop.resolver";
 import { Company } from "./entities/company.entity";
 import { Tenant } from "./entities/tenant.entity";
+import {
+  AbandonedCartPublisher,
+  abandonedCartTask,
+} from "./events/abandoned-cart.publisher";
 import { CustomerEventPublisher } from "./events/customer-event.publisher";
 import { OrderEventPublisher } from "./events/order-event.publisher";
 import { TenantChannelHandler } from "./events/tenant-channel.handler";
 import { TenantBoundaryGuard } from "./guards/tenant-boundary.guard";
 import { wiskoErpPaymentHandler } from "./payment/wisko-erp-payment-handler";
+import { customerCondition } from "./promotion/customer-promotion";
 import {
   erpItemsCondition,
   erpItemsDiscountAction,
@@ -25,8 +30,10 @@ import { RabbitMQConsumer } from "./rabbitmq/rabbitmq.consumer";
 import { RabbitMQMessageHandler } from "./rabbitmq/rabbitmq.handler";
 import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
 import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
+import { CouponRequestService } from "./services/coupon-request.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
+import { PrivacyErasureService } from "./services/privacy-erasure.service";
 import { ProductContentSyncService } from "./services/product-content-sync.service";
 import { ProductSyncService } from "./services/product-sync.service";
 import { PromotionSyncService } from "./services/promotion-sync.service";
@@ -50,9 +57,12 @@ import "./types";
     TaxCategorySyncService,
     B2bCustomerSyncService,
     PromotionSyncService,
+    CouponRequestService,
+    PrivacyErasureService,
     TenantChannelHandler,
     OrderEventPublisher,
     CustomerEventPublisher,
+    AbandonedCartPublisher,
     TenantBoundaryGuard,
     RabbitMQConsumer,
     RabbitMQPublisher,
@@ -71,6 +81,8 @@ import "./types";
     config.paymentOptions.paymentMethodHandlers.push(wiskoErpPaymentHandler);
     config.promotionOptions.promotionConditions.push(erpItemsCondition);
     config.promotionOptions.promotionActions.push(erpItemsDiscountAction);
+    config.promotionOptions.promotionConditions.push(customerCondition);
+    config.schedulerOptions.tasks.push(abandonedCartTask);
 
     config.taxOptions.orderTaxCalculationStrategy =
       new OrderLevelTaxCalculationStrategy();
@@ -149,6 +161,41 @@ import "./types";
         label: [{ languageCode: LanguageCode.en, value: "Customer GSTIN" }],
         validate: (value: string | null) =>
           value ? gstinError(value) : undefined,
+      },
+      {
+        name: "utmSource",
+        type: "string",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "UTM source" }],
+        ui: { tab: "Marketing" },
+      },
+      {
+        name: "utmMedium",
+        type: "string",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "UTM medium" }],
+        ui: { tab: "Marketing" },
+      },
+      {
+        name: "utmCampaign",
+        type: "string",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "UTM campaign" }],
+        ui: { tab: "Marketing" },
+      },
+      {
+        name: "utmContent",
+        type: "string",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "UTM content" }],
+        ui: { tab: "Marketing" },
+      },
+      {
+        name: "utmTerm",
+        type: "string",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "UTM term" }],
+        ui: { tab: "Marketing" },
       },
     );
     config.customFields.ProductVariant.push(
@@ -290,6 +337,14 @@ import "./types";
         nullable: true,
         internal: true,
       },
+      {
+        // purpose:year:customerId of a coupon.requested; see CouponRequestService.
+        name: "couponRequestKey",
+        type: "string",
+        unique: true,
+        nullable: true,
+        internal: true,
+      },
     );
     config.customFields.Customer.push({
       name: "erpCustomerId",
@@ -298,6 +353,22 @@ import "./types";
       readonly: true,
       label: [{ languageCode: LanguageCode.en, value: "ERP Customer ID" }],
     });
+    config.customFields.Customer.push(
+      {
+        name: "dateOfBirth",
+        type: "datetime",
+        nullable: true,
+        label: [{ languageCode: LanguageCode.en, value: "Date of birth" }],
+        ui: { component: "date-form-input" },
+      },
+      {
+        // The privacy.erasure_requested that erased this customer; see PrivacyErasureService.
+        name: "erasureRequestId",
+        type: "string",
+        nullable: true,
+        internal: true,
+      },
+    );
     config.customFields.Administrator.push({
       name: "tenant",
       type: "relation",

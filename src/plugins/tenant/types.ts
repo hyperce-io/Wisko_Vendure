@@ -103,6 +103,25 @@ export interface SyncPromotionInput {
   modified: Date;
 }
 
+/** coupon.requested: a single-use percentage coupon for one customer, e.g. a birthday coupon. */
+export interface CouponRequestInput {
+  requestId: string;
+  purpose: string;
+  year: number;
+  customerId: string;
+  erpChannelId: string;
+  discountPercent: number;
+  validDays: number;
+}
+
+/** privacy.erasure_requested: a null `superOrganizationCode` means every Super Organization. */
+export interface PrivacyErasureInput {
+  requestId: string;
+  email: string;
+  vendureCustomerId: string | null;
+  superOrganizationCode: string | null;
+}
+
 export interface SyncInvoiceInput {
   orderCode: string;
   fileUrl?: string;
@@ -290,6 +309,8 @@ declare module "@vendure/core/dist/entity/custom-entity-fields" {
   }
   interface CustomCustomerFields {
     erpCustomerId: string | null;
+    dateOfBirth: Date | null;
+    erasureRequestId: string | null;
   }
   interface CustomAdministratorFields {
     tenant: Tenant | null;
@@ -301,6 +322,11 @@ declare module "@vendure/core/dist/entity/custom-entity-fields" {
     erpInvoiceDate: Date | null;
     erpInvoiceStatus: string | null;
     gstin: string | null;
+    utmSource: string | null;
+    utmMedium: string | null;
+    utmCampaign: string | null;
+    utmContent: string | null;
+    utmTerm: string | null;
   }
   interface CustomProductFields {
     specs: string | null;
@@ -331,5 +357,6 @@ declare module "@vendure/core/dist/entity/custom-entity-fields" {
   interface CustomPromotionFields {
     erpPromotionId: string | null;
     erpModifiedAt: Date | null;
+    couponRequestKey: string | null;
   }
 }

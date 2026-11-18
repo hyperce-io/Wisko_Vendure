@@ -133,6 +133,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                 lastName: customer.lastName,
                 emailAddress: customer.emailAddress,
                 phoneNumber: customer.phoneNumber || null,
+                dateOfBirth: customer.customFields.dateOfBirth?.toISOString().slice(0, 10) ?? null,
                 createdAt: customer.createdAt?.toISOString(),
                 updatedAt: customer.updatedAt?.toISOString(),
             },
