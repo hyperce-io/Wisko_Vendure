@@ -103,17 +103,6 @@ export interface SyncPromotionInput {
   modified: Date;
 }
 
-/** coupon.requested: a single-use percentage coupon for one customer, e.g. a birthday coupon. */
-export interface CouponRequestInput {
-  requestId: string;
-  purpose: string;
-  year: number;
-  customerId: string;
-  erpChannelId: string;
-  discountPercent: number;
-  validDays: number;
-}
-
 /** privacy.erasure_requested: a null `superOrganizationCode` means every Super Organization. */
 export interface PrivacyErasureInput {
   requestId: string;
@@ -306,6 +295,7 @@ declare module "@vendure/core/dist/entity/custom-entity-fields" {
   interface CustomChannelFields {
     tenant: Tenant | null;
     erpChannelId: string | null;
+    birthdayDiscountPercent: number | null;
   }
   interface CustomCustomerFields {
     erpCustomerId: string | null;

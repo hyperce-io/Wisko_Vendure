@@ -73,12 +73,10 @@ export const ROUTING_KEYS = {
   // Outbound only: an active order left idle (events/abandoned-cart.publisher.ts).
   CART_ABANDONED: "cart.abandoned",
 
-  // Inbound coupon.requested; outbound replies. Bound by exact key so the replies do not loop back.
-  COUPON_REQUESTED: "coupon.requested",
-  COUPON_CREATED: "coupon.created",
-  COUPON_FAILED: "coupon.failed",
+  // Outbound only: today's birthday promotion of a store (services/birthday-promotion.service.ts).
+  BIRTHDAY_PROMOTION_CREATED: "birthday.promotion_created",
 
-  // Inbound erasure_requested; outbound erasure_completed. Bound by exact key, like coupons.
+  // Inbound erasure_requested; outbound erasure_completed. Bound by exact key so the replies do not loop back.
   PRIVACY_ERASURE_REQUESTED: "privacy.erasure_requested",
   PRIVACY_ERASURE_COMPLETED: "privacy.erasure_completed",
 } as const;

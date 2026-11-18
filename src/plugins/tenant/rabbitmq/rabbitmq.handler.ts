@@ -9,7 +9,6 @@ import {
     User,
 } from "@vendure/core";
 import { B2bCustomerSyncService } from "../services/b2b-customer-sync.service";
-import { CouponRequestService } from "../services/coupon-request.service";
 import { InvoiceSyncService } from "../services/invoice-sync.service";
 import { PaymentMethodSyncService } from "../services/payment-method-sync.service";
 import { PrivacyErasureService } from "../services/privacy-erasure.service";
@@ -20,7 +19,6 @@ import { ShippingMethodSyncService } from "../services/shipping-method-sync.serv
 import { TaxCategorySyncService } from "../services/tax-category-sync.service";
 import { TenantService } from "../services/tenant.service";
 import {
-    CouponRequestInput,
     PrivacyErasureInput,
     SyncAdminInput,
     SyncB2bCustomerInput,
@@ -49,7 +47,6 @@ export class RabbitMQMessageHandler {
     private taxCategorySyncService: TaxCategorySyncService,
     private b2bCustomerSyncService: B2bCustomerSyncService,
     private promotionSyncService: PromotionSyncService,
-    private couponRequestService: CouponRequestService,
     private privacyErasureService: PrivacyErasureService,
     private requestContextService: RequestContextService,
     private connection: TransactionalConnection,
@@ -179,9 +176,6 @@ export class RabbitMQMessageHandler {
         break;
 
       // Coupon
-      case ROUTING_KEYS.COUPON_REQUESTED:
-        await this.handleCouponRequest(ctx, payload);
-        break;
 
       // Privacy
       case ROUTING_KEYS.PRIVACY_ERASURE_REQUESTED:
@@ -621,36 +615,6 @@ export class RabbitMQMessageHandler {
       ctx,
       payload.erp_promotion_ids,
     );
-  }
-
-  // ---- Coupon ----
-
-  private async handleCouponRequest(ctx: RequestContext, payload: any) {
-    if (!payload.requestId) throw new Error("requestId is required");
-    if (!payload.purpose) throw new Error("purpose is required");
-    if (!Number.isInteger(payload.year))
-      throw new Error("year must be an integer");
-    if (!payload.customer?.id) throw new Error("customer.id is required");
-    if (!payload.channel?.erpChannelId)
-      throw new Error("channel.erpChannelId is required");
-    if (
-      typeof payload.discountPercent !== "number" ||
-      payload.discountPercent <= 0 ||
-      payload.discountPercent > 100
-    )
-      throw new Error("discountPercent must be a number above 0, at most 100");
-    if (!Number.isInteger(payload.validDays) || payload.validDays < 1)
-      throw new Error("validDays must be a whole number of days, at least 1");
-    const input: CouponRequestInput = {
-      requestId: payload.requestId,
-      purpose: payload.purpose,
-      year: payload.year,
-      customerId: String(payload.customer.id),
-      erpChannelId: payload.channel.erpChannelId,
-      discountPercent: payload.discountPercent,
-      validDays: payload.validDays,
-    };
-    await this.couponRequestService.createCoupon(ctx, input);
   }
 
   // ---- Privacy ----
