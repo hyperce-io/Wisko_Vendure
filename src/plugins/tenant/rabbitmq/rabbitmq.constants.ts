@@ -69,4 +69,16 @@ export const ROUTING_KEYS = {
   ERP_SYNC_REPLY: "vendure.erp-sync.reply",
 
   SYNC_FULL: "sync.full",
+
+  // Outbound only: an active order left idle (events/abandoned-cart.publisher.ts).
+  CART_ABANDONED: "cart.abandoned",
+
+  // Inbound coupon.requested; outbound replies. Bound by exact key so the replies do not loop back.
+  COUPON_REQUESTED: "coupon.requested",
+  COUPON_CREATED: "coupon.created",
+  COUPON_FAILED: "coupon.failed",
+
+  // Inbound erasure_requested; outbound erasure_completed. Bound by exact key, like coupons.
+  PRIVACY_ERASURE_REQUESTED: "privacy.erasure_requested",
+  PRIVACY_ERASURE_COMPLETED: "privacy.erasure_completed",
 } as const;
