@@ -30,7 +30,7 @@ import { RabbitMQConsumer } from "./rabbitmq/rabbitmq.consumer";
 import { RabbitMQMessageHandler } from "./rabbitmq/rabbitmq.handler";
 import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
 import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
-import { CouponRequestService } from "./services/coupon-request.service";
+import { CouponRequestService, expiredCouponCleanupTask } from "./services/coupon-request.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
 import { PrivacyErasureService } from "./services/privacy-erasure.service";
@@ -83,6 +83,7 @@ import "./types";
     config.promotionOptions.promotionActions.push(erpItemsDiscountAction);
     config.promotionOptions.promotionConditions.push(customerCondition);
     config.schedulerOptions.tasks.push(abandonedCartTask);
+    config.schedulerOptions.tasks.push(expiredCouponCleanupTask);
 
     config.taxOptions.orderTaxCalculationStrategy =
       new OrderLevelTaxCalculationStrategy();
