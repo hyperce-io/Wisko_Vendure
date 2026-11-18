@@ -30,7 +30,7 @@ import { RabbitMQConsumer } from "./rabbitmq/rabbitmq.consumer";
 import { RabbitMQMessageHandler } from "./rabbitmq/rabbitmq.handler";
 import { RabbitMQPublisher } from "./rabbitmq/rabbitmq.publisher";
 import { B2bCustomerSyncService } from "./services/b2b-customer-sync.service";
-import { CouponRequestService, expiredCouponCleanupTask } from "./services/coupon-request.service";
+import { BirthdayPromotionService, birthdayPromotionTask, expiredCouponCleanupTask } from "./services/birthday-promotion.service";
 import { InvoiceSyncService } from "./services/invoice-sync.service";
 import { PaymentMethodSyncService } from "./services/payment-method-sync.service";
 import { PrivacyErasureService } from "./services/privacy-erasure.service";
@@ -57,7 +57,7 @@ import "./types";
     TaxCategorySyncService,
     B2bCustomerSyncService,
     PromotionSyncService,
-    CouponRequestService,
+    BirthdayPromotionService,
     PrivacyErasureService,
     TenantChannelHandler,
     OrderEventPublisher,
@@ -83,7 +83,7 @@ import "./types";
     config.promotionOptions.promotionActions.push(erpItemsDiscountAction);
     config.promotionOptions.promotionConditions.push(customerCondition);
     config.schedulerOptions.tasks.push(abandonedCartTask);
-    config.schedulerOptions.tasks.push(expiredCouponCleanupTask);
+    config.schedulerOptions.tasks.push(birthdayPromotionTask, expiredCouponCleanupTask);
 
     config.taxOptions.orderTaxCalculationStrategy =
       new OrderLevelTaxCalculationStrategy();
@@ -103,6 +103,20 @@ import "./types";
         internal: false,
         readonly: true,
         label: [{ languageCode: "en" as any, value: "ERP Channel ID" }],
+      },
+      {
+        name: "birthdayDiscountPercent",
+        type: "int",
+        nullable: true,
+        min: 0,
+        max: 100,
+        label: [{ languageCode: LanguageCode.en, value: "Birthday discount (%)" }],
+        description: [
+          {
+            languageCode: LanguageCode.en,
+            value: "Percent off for customers on their birthday, that day only. Empty or 0: no birthday discount.",
+          },
+        ],
       },
     );
     config.customFields.Order.push(
@@ -339,7 +353,7 @@ import "./types";
         internal: true,
       },
       {
-        // purpose:year:customerId of a coupon.requested; see CouponRequestService.
+        // birthday:date:channelId of a birthday promotion; see BirthdayPromotionService.
         name: "couponRequestKey",
         type: "string",
         unique: true,

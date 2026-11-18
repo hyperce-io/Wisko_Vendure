@@ -14,6 +14,7 @@ import {
 import { RabbitMQPublisher } from '../rabbitmq/rabbitmq.publisher';
 import { ROUTING_KEYS } from '../rabbitmq/rabbitmq.constants';
 import { resolveErpChannel } from './erp-channel.resolver';
+import { birthDateOf } from '../services/birthday-promotion.service';
 
 @Injectable()
 export class CustomerEventPublisher implements OnApplicationBootstrap {
@@ -133,7 +134,7 @@ export class CustomerEventPublisher implements OnApplicationBootstrap {
                 lastName: customer.lastName,
                 emailAddress: customer.emailAddress,
                 phoneNumber: customer.phoneNumber || null,
-                dateOfBirth: customer.customFields.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+                dateOfBirth: customer.customFields.dateOfBirth ? birthDateOf(customer.customFields.dateOfBirth) : null,
                 createdAt: customer.createdAt?.toISOString(),
                 updatedAt: customer.updatedAt?.toISOString(),
             },
