@@ -21,7 +21,6 @@ import { OrderEventPublisher } from "./events/order-event.publisher";
 import { TenantChannelHandler } from "./events/tenant-channel.handler";
 import { TenantBoundaryGuard } from "./guards/tenant-boundary.guard";
 import { wiskoErpPaymentHandler } from "./payment/wisko-erp-payment-handler";
-import { customerCondition } from "./promotion/customer-promotion";
 import {
   erpItemsCondition,
   erpItemsDiscountAction,
@@ -81,7 +80,6 @@ import "./types";
     config.paymentOptions.paymentMethodHandlers.push(wiskoErpPaymentHandler);
     config.promotionOptions.promotionConditions.push(erpItemsCondition);
     config.promotionOptions.promotionActions.push(erpItemsDiscountAction);
-    config.promotionOptions.promotionConditions.push(customerCondition);
     config.schedulerOptions.tasks.push(abandonedCartTask);
     config.schedulerOptions.tasks.push(birthdayPromotionTask, expiredCouponCleanupTask);
 
