@@ -4,6 +4,7 @@ import { randomInt } from "crypto";
 import { IsNull, LessThan, MoreThan, Not } from "typeorm";
 import {
   Channel,
+  ChannelService,
   Customer,
   CustomerGroupService,
   ID,
@@ -93,6 +94,7 @@ export class BirthdayPromotionService {
     private connection: TransactionalConnection,
     private promotionService: PromotionService,
     private customerGroupService: CustomerGroupService,
+    private channelService: ChannelService,
     private publisher: RabbitMQPublisher,
   ) {}
 
@@ -238,10 +240,7 @@ export class BirthdayPromotionService {
     if (isGraphQlErrorResult(result)) {
       throw new UserInputError(`Birthday promotion ${couponRequestKey}: ${result.message}`);
     }
-    await this.promotionService.assignPromotionsToChannel(ctx, {
-      promotionIds: [result.id],
-      channelId: channel.id,
-    });
+    await this.channelService.assignToChannels(ctx, Promotion, result.id, [channel.id]);
 
     Logger.info(
       `Created birthday promotion ${result.couponCode} for ${customerIds.length} customer(s) in channel ${channel.code}`,
