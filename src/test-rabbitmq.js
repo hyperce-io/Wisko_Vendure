@@ -2,9 +2,10 @@
  * Test script: sends all JSON contract scenarios to RabbitMQ and verifies processing.
  * Run: node src/test-rabbitmq.js
  */
+require('dotenv/config');
 const amqp = require('amqplib');
 
-const RABBITMQ_URL = 'amqp://admin:admin@4.240.93.82:5672';
+const RABBITMQ_URL = process.env.RABBITMQ_URL;
 const EXCHANGE = 'wisko.sync';
 
 async function run() {

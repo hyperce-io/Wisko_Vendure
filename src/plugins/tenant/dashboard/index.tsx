@@ -12,6 +12,7 @@ import {
     PageBlock,
     PageLayout,
     usePage,
+    usePermissions,
     type DashboardFormComponent,
 } from '@vendure/dashboard';
 import { graphql } from '@/gql';
@@ -57,12 +58,6 @@ const getCompaniesQuery = graphql(`
                     defaultCurrencyCode
                     erpChannelId
                 }
-                administrators {
-                    id
-                    firstName
-                    lastName
-                    emailAddress
-                }
             }
             totalItems
         }
@@ -91,6 +86,8 @@ const updateTenantMutation = graphql(`
 
 function OrganizationsPage() {
     const queryClient = useQueryClient();
+    const { hasPermissions } = usePermissions();
+    const canChangeStatus = hasPermissions(['SuperAdmin']);
 
     const { data, isLoading, error } = useQuery({
         queryKey: ['companies'],
@@ -183,32 +180,22 @@ function OrganizationsPage() {
                                     </Badge>
                                     <span className="text-muted-foreground text-xs">{company.tenants?.length ?? 0} tenants</span>
                                     <span className="text-muted-foreground text-xs">{company.channels?.length ?? 0} channels</span>
-                                    <div className="ml-auto" onClick={e => e.stopPropagation()}>
-                                        <Button
-                                            size="sm"
-                                            variant={company.enabled ? 'destructive' : 'default'}
-                                            onClick={() => toggleCompany.mutate({ id: company.id, enabled: !company.enabled })}
-                                        >
-                                            {company.enabled ? 'Suspend' : 'Activate'}
-                                        </Button>
-                                    </div>
+                                    {canChangeStatus && (
+                                        <div className="ml-auto" onClick={e => e.stopPropagation()}>
+                                            <Button
+                                                size="sm"
+                                                variant={company.enabled ? 'destructive' : 'default'}
+                                                onClick={() => toggleCompany.mutate({ id: company.id, enabled: !company.enabled })}
+                                            >
+                                                {company.enabled ? 'Suspend' : 'Activate'}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Expanded: Company details */}
                                 {expandedCompany === company.id && (
                                     <div className="pl-10 bg-muted/30 pb-2">
-                                        {/* Company admins */}
-                                        {(company.administrators?.length ?? 0) > 0 && (
-                                            <div className="flex items-center gap-2 py-2 text-xs border-b border-border/50">
-                                                <span className="font-semibold text-muted-foreground">ADMINS:</span>
-                                                {company.administrators?.map(a => (
-                                                    <Badge key={a.id} variant="secondary" className="text-[11px]">
-                                                        {a.firstName} {a.lastName} ({a.emailAddress})
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        )}
-
                                         {/* Tenants */}
                                         {(company.tenants?.length ?? 0) === 0 ? (
                                             <p className="text-muted-foreground text-sm py-3">No tenants</p>
@@ -231,15 +218,17 @@ function OrganizationsPage() {
                                                         </Badge>
                                                         <span className="text-muted-foreground text-xs">{tenant.channels?.length ?? 0} ch</span>
                                                         <span className="text-muted-foreground text-xs">{tenant.administrators?.length ?? 0} admins</span>
-                                                        <div className="ml-auto" onClick={e => e.stopPropagation()}>
-                                                            <Button
-                                                                size="sm"
-                                                                variant={tenant.enabled ? 'destructive' : 'default'}
-                                                                onClick={() => toggleTenant.mutate({ id: tenant.id, enabled: !tenant.enabled })}
-                                                            >
-                                                                {tenant.enabled ? 'Suspend' : 'Activate'}
-                                                            </Button>
-                                                        </div>
+                                                        {canChangeStatus && (
+                                                            <div className="ml-auto" onClick={e => e.stopPropagation()}>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant={tenant.enabled ? 'destructive' : 'default'}
+                                                                    onClick={() => toggleTenant.mutate({ id: tenant.id, enabled: !tenant.enabled })}
+                                                                >
+                                                                    {tenant.enabled ? 'Suspend' : 'Activate'}
+                                                                </Button>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     {/* Expanded: Tenant details */}
@@ -389,7 +378,7 @@ defineDashboardExtension({
     routes: [{
         path: '/organizations',
         loader: () => ({ breadcrumb: 'Organizations' }),
-        navMenuItem: { id: 'organizations', title: 'Organizations', sectionId: 'settings' },
+        navMenuItem: { id: 'organizations', title: 'Organizations', sectionId: 'settings', requiresPermission: 'ReadChannel' },
         component: OrganizationsPage,
     }],
 });

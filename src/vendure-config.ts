@@ -6,6 +6,8 @@ import {
     VendureConfig,
     LogLevel,
     DefaultLogger,
+    NativeAuthenticationStrategy,
+    DefaultSessionCacheStrategy,
 } from '@vendure/core';
 import { defaultEmailHandlers, EmailPlugin, FileBasedTemplateLoader } from '@vendure/email-plugin';
 import { AssetServerPlugin, configureS3AssetStorage } from '@vendure/asset-server-plugin';
@@ -16,11 +18,15 @@ import { ComplaintPlugin } from './plugins/complaint/complaint.plugin';
 import { FaqPlugin } from './plugins/faq/faq.plugin';
 import { ReviewsPlugin } from './plugins/reviews/reviews.plugin';
 import { WishlistPlugin } from './plugins/wishlist/wishlist.plugin';
+import { ZitadelAuthenticationStrategy } from './plugins/zitadel/zitadel-authentication.strategy';
+import { ZitadelPlugin } from './plugins/zitadel/zitadel.plugin';
 import 'dotenv/config';
 import path from 'path';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;
+const zitadelSessionHours = Number(process.env.ZITADEL_SESSION_HOURS) || 12;
+const dashboardRoute = 'dashboard';
 
 export const config: VendureConfig = {
     logger: new DefaultLogger({ level: LogLevel.Verbose }),
@@ -32,6 +38,14 @@ export const config: VendureConfig = {
     },
     authOptions: {
         tokenMethod: ['bearer', 'cookie'],
+        // Staff sign in through ZITADEL only (src/plugins/zitadel); passwords stay for customers. Applies to customers too.
+        sessionDuration: `${zitadelSessionHours}h`,
+        // The worker ends sessions and changes roles (ZITADEL role sync, account check); the server's in-memory cache re-reads them after 15 s.
+        sessionCacheStrategy: new DefaultSessionCacheStrategy({ ttl: 15_000 }),
+        adminAuthenticationStrategy: [
+            new ZitadelAuthenticationStrategy(),
+            ...(process.env.WISKO_VENDURE_PASSWORD_LOGIN === 'on' ? [new NativeAuthenticationStrategy()] : []),
+        ],
         superadminCredentials: {
             identifier: process.env.SUPERADMIN_USERNAME,
             password: process.env.SUPERADMIN_PASSWORD,
@@ -103,7 +117,7 @@ export const config: VendureConfig = {
             },
         }),
         DashboardPlugin.init({
-            route: 'dashboard',
+            route: dashboardRoute,
             appDir: IS_DEV
                 ? path.join(__dirname, '../dist/dashboard')
                 : path.join(__dirname, 'dashboard'),
@@ -113,5 +127,17 @@ export const config: VendureConfig = {
         ReviewsPlugin,
         FaqPlugin.init({}),
         ComplaintPlugin,
+        ZitadelPlugin.init({
+            issuer: process.env.ZITADEL_ISSUER,
+            projectId: process.env.ZITADEL_PROJECT_ID,
+            platformOrgId: process.env.ZITADEL_PLATFORM_ORG_ID,
+            clientId: process.env.ZITADEL_CLIENT_ID,
+            clientSecret: process.env.ZITADEL_CLIENT_SECRET,
+            serviceToken: process.env.ZITADEL_SERVICE_TOKEN,
+            sessionHours: zitadelSessionHours,
+            vendureUrl: process.env.VENDURE_URL || `http://localhost:${serverPort}`,
+            dashboardPath: `/${dashboardRoute}`,
+            rabbitmqUrl: process.env.RABBITMQ_URL,
+        }),
     ],
 };
