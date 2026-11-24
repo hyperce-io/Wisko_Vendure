@@ -8,25 +8,25 @@ export class TenantAdminResolver {
     constructor(private tenantService: TenantService) {}
 
     @Query()
-    @Allow(Permission.SuperAdmin)
+    @Allow(Permission.ReadChannel)
     async tenants(@Ctx() ctx: RequestContext) {
         return this.tenantService.findAll(ctx);
     }
 
     @Query()
-    @Allow(Permission.SuperAdmin)
+    @Allow(Permission.ReadChannel)
     async tenant(@Ctx() ctx: RequestContext, @Args() args: { id: string }) {
         return this.tenantService.findOne(ctx, args.id);
     }
 
     @Query()
-    @Allow(Permission.SuperAdmin)
+    @Allow(Permission.ReadChannel)
     async companies(@Ctx() ctx: RequestContext) {
         return this.tenantService.findAllCompanies(ctx);
     }
 
     @Query()
-    @Allow(Permission.SuperAdmin)
+    @Allow(Permission.ReadChannel)
     async company(@Ctx() ctx: RequestContext, @Args() args: { id: string }) {
         return this.tenantService.findCompany(ctx, args.id);
     }
@@ -45,7 +45,6 @@ export class TenantAdminResolver {
         return this.tenantService.syncCompany(ctx, {
             code: input.code,
             name: input.name,
-            admin: input.adminEmail ? { email: input.adminEmail, password: input.adminPassword } : undefined,
         });
     }
 

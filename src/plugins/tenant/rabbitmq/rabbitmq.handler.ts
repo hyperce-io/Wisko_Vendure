@@ -201,7 +201,6 @@ export class RabbitMQMessageHandler {
       code: company.code,
       name: company.name,
       enabled: company.enabled,
-      admin: company.admin,
     };
     await this.tenantService.syncCompany(ctx, input);
   }
@@ -223,7 +222,6 @@ export class RabbitMQMessageHandler {
       code: tenant.code,
       name: tenant.name,
       enabled: tenant.enabled,
-      admin: tenant.admin,
     };
     await this.tenantService.syncTenant(ctx, input);
   }
@@ -268,17 +266,15 @@ export class RabbitMQMessageHandler {
   // ---- Admin ----
 
   private async handleAdminSync(ctx: RequestContext, payload: any) {
-    const { company, tenant, admin } = payload;
+    const { tenant, admin } = payload;
     if (!admin?.email) throw new Error("admin.email is required");
     const input: SyncAdminInput = {
-      companyCode: company?.code,
+      zitadelUserId: admin.zitadelUserId,
       tenantCode: tenant?.code,
       email: admin.email,
-      password: admin.password,
       firstName: admin.firstName,
       lastName: admin.lastName,
       role: admin.role || "tenant-admin",
-      channelCodes: admin.channelCodes,
     };
     await this.tenantService.syncAdmin(ctx, input);
   }

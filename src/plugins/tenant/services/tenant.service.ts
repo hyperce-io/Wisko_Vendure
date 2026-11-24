@@ -13,15 +13,17 @@ import {
     Seller,
     Administrator,
     Logger,
-    Role,
-    Permission,
     isGraphQlErrorResult,
     StockLocationService,
     GlobalSettingsService,
+    ExternalAuthenticationService,
+    SessionService,
+    Permission,
 } from '@vendure/core';
 import { Tenant } from '../entities/tenant.entity';
 import { Company } from '../entities/company.entity';
 import { ERP_MANAGED_PERMISSIONS, TENANT_ADMIN_PERMISSIONS } from '../constants';
+import { ZITADEL_STRATEGY_NAME } from '../../zitadel/constants';
 import { ensureChannelStockLocation } from './channel-stock-location';
 import {
     SyncCompanyInput,
@@ -46,6 +48,8 @@ export class TenantService {
         private administratorService: AdministratorService,
         private stockLocationService: StockLocationService,
         private globalSettingsService: GlobalSettingsService,
+        private externalAuthenticationService: ExternalAuthenticationService,
+        private sessionService: SessionService,
     ) {}
 
     // ========================================================================
@@ -53,24 +57,10 @@ export class TenantService {
     // ========================================================================
 
     async findAllCompanies(ctx: RequestContext) {
-        const repo = this.connection.rawConnection.getRepository(Company);
-        const [items, totalItems] = await repo.findAndCount({ relations: { tenants: true } });
-        const enrichedItems: CompanyWithRelations[] = [];
-        for (const company of items) {
-            const channels = await this.getChannelsForCompany(company.id);
-            const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
-            // Enrich each nested tenant with its channels + admins
-            const enrichedTenants: TenantWithRelations[] = [];
-            if (company.tenants) {
-                for (const tenant of company.tenants) {
-                    const tenantChannels = await this.getChannelsForTenant(tenant.id);
-                    const tenantAdmins = await this.getAdminsForTenant(tenant.id);
-                    enrichedTenants.push(Object.assign(tenant, { channels: tenantChannels, administrators: tenantAdmins }) as TenantWithRelations);
-                }
-            }
-            enrichedItems.push(Object.assign(company, { channels, administrators, tenants: enrichedTenants }) as CompanyWithRelations);
-        }
-        return { items: enrichedItems, totalItems };
+        const companies = await this.connection.rawConnection.getRepository(Company).find({ relations: { tenants: true } });
+        const readableCompanies = await Promise.all(companies.map(company => this.readableCompany(ctx, company)));
+        const items = readableCompanies.filter((company): company is CompanyWithRelations => company !== null);
+        return { items, totalItems: items.length };
     }
 
     async findCompany(ctx: RequestContext, id: ID): Promise<CompanyWithRelations | null> {
@@ -78,18 +68,7 @@ export class TenantService {
             where: { id },
             relations: { parentRole: true, tenants: true },
         });
-        if (!company) return null;
-        const channels = await this.getChannelsForCompany(company.id);
-        const administrators = await this.getAdminsForRole(ctx, company.parentRoleId);
-        const enrichedTenants: TenantWithRelations[] = [];
-        if (company.tenants) {
-            for (const tenant of company.tenants) {
-                const tenantChannels = await this.getChannelsForTenant(tenant.id);
-                const tenantAdmins = await this.getAdminsForTenant(tenant.id);
-                enrichedTenants.push(Object.assign(tenant, { channels: tenantChannels, administrators: tenantAdmins }) as TenantWithRelations);
-            }
-        }
-        return Object.assign(company, { channels, administrators, tenants: enrichedTenants }) as CompanyWithRelations;
+        return company ? this.readableCompany(ctx, company) : null;
     }
 
     async findCompanyByCode(ctx: RequestContext, code: string) {
@@ -119,17 +98,6 @@ export class TenantService {
                 }),
             );
             Logger.info(`Created company: ${input.code}`, 'TenantService');
-
-            if (input.admin?.email) {
-                await this.administratorService.create(ctx, {
-                    firstName: input.admin.firstName || input.name || input.code,
-                    lastName: input.admin.lastName || 'Admin',
-                    emailAddress: input.admin.email,
-                    password: input.admin.password || 'changeme123',
-                    roleIds: [role.id as string],
-                });
-                Logger.info(`Created company admin: ${input.admin.email}`, 'TenantService');
-            }
         } else {
             await this.revokeErpManagedPermissions(ctx, company.parentRoleId);
             let changed = false;
@@ -164,15 +132,10 @@ export class TenantService {
     // ========================================================================
 
     async findAll(ctx: RequestContext) {
-        const repo = this.connection.getRepository(ctx, Tenant);
-        const [items, totalItems] = await repo.findAndCount({ relations: { company: true } });
-        const enrichedItems: TenantWithRelations[] = [];
-        for (const tenant of items) {
-            const channels = await this.getChannelsForTenant(tenant.id);
-            const administrators = await this.getAdminsForTenant(tenant.id);
-            enrichedItems.push(Object.assign(tenant, { channels, administrators }) as TenantWithRelations);
-        }
-        return { items: enrichedItems, totalItems };
+        const tenants = await this.connection.getRepository(ctx, Tenant).find({ relations: { company: true } });
+        const readableTenants = await Promise.all(tenants.map(tenant => this.readableTenant(ctx, tenant)));
+        const items = readableTenants.filter((tenant): tenant is TenantWithRelations => tenant !== null);
+        return { items, totalItems: items.length };
     }
 
     async findOne(ctx: RequestContext, id: ID): Promise<TenantWithRelations | null> {
@@ -180,10 +143,7 @@ export class TenantService {
             where: { id },
             relations: { parentRole: true, company: true },
         });
-        if (!tenant) return null;
-        const channels = await this.getChannelsForTenant(tenant.id);
-        const administrators = await this.getAdminsForTenant(tenant.id);
-        return Object.assign(tenant, { channels, administrators }) as TenantWithRelations;
+        return tenant ? this.readableTenant(ctx, tenant) : null;
     }
 
     async findByCode(ctx: RequestContext, code: string) {
@@ -217,19 +177,6 @@ export class TenantService {
                 }),
             );
             Logger.info(`Created tenant: ${input.code} under ${input.companyCode}`, 'TenantService');
-
-            if (input.admin?.email) {
-                await this.administratorService.create(ctx, {
-                    firstName: input.admin.firstName || input.name || input.code,
-                    lastName: input.admin.lastName || 'Admin',
-                    emailAddress: input.admin.email,
-                    password: input.admin.password || 'changeme123',
-                    roleIds: [role.id as string],
-                    // customFields is typed as JSON in CreateAdministratorInput
-                    customFields: { tenant } as any,
-                });
-                Logger.info(`Created tenant admin: ${input.admin.email}`, 'TenantService');
-            }
         } else {
             await this.revokeErpManagedPermissions(ctx, tenant.parentRoleId);
             let changed = false;
@@ -413,77 +360,53 @@ export class TenantService {
     // ADMIN
     // ========================================================================
 
+    /**
+     * Creates and updates the person's Vendure admin, linked to their ZITADEL account (wisko-auth docs/vendureAuth.md
+     * B4). Roles come only from ZITADEL (src/plugins/zitadel), so none are given here.
+     */
     async syncAdmin(ctx: RequestContext, input: SyncAdminInput) {
-        // Check if exists — update if found, create if not
-        const { items } = await this.administratorService.findAll(ctx, {
-            filter: { emailAddress: { eq: input.email } },
-        });
-        if (items.length > 0) {
-            // Update existing admin (password, name, etc.)
-            const existing = items[0];
-            const updateInput: any = { id: existing.id };
-            if (input.firstName) updateInput.firstName = input.firstName;
-            if (input.lastName) updateInput.lastName = input.lastName;
-            if (input.password) updateInput.password = input.password;
-            await this.administratorService.update(ctx, updateInput);
+        if (!input.zitadelUserId) {
+            Logger.info(`Skipped admin ${input.email}: no ZITADEL account yet`, 'TenantService');
+            return;
+        }
+        const user = await this.externalAuthenticationService.findAdministratorUser(ctx, ZITADEL_STRATEGY_NAME, input.zitadelUserId);
+        const existing = user ? await this.administratorService.findOneByUserId(ctx, user.id) : undefined;
+        if (existing) {
+            await this.administratorService.update(ctx, {
+                id: existing.id,
+                firstName: input.firstName,
+                lastName: input.lastName,
+                emailAddress: input.email === existing.emailAddress ? undefined : input.email,
+            });
             Logger.info(`Updated admin ${input.email}`, 'TenantService');
             return;
         }
 
-        let roleIds: string[] = [];
-        let tenant: Tenant | null = null;
-
-        if (input.role === 'company-admin' && input.companyCode) {
-            const company = await this.findCompanyByCode(ctx, input.companyCode);
-            if (company) roleIds = [company.parentRoleId as string];
-        } else if (input.role === 'store-staff' && input.channelCodes?.length) {
-            // Ensure SuperAdmin role has access to these channels first
-            await this.syncSuperAdminChannels();
-
-            const allChannels = await this.channelService.findAll(ctx);
-            const channelIds = allChannels.items
-                .filter(c => input.channelCodes!.includes(c.code))
-                .map(c => c.id as string);
-
-            if (channelIds.length > 0) {
-                const role = await this.roleService.create(ctx, {
-                    code: `staff-${input.email.split('@')[0]}-${Date.now().toString(36)}`,
-                    description: `Store staff for ${input.email}`,
-                    permissions: [Permission.ReadCatalog, Permission.ReadOrder, Permission.UpdateOrder, Permission.ReadCustomer],
-                    channelIds,
-                });
-                roleIds = [role.id as string];
-            }
-        } else if (input.tenantCode) {
-            tenant = await this.findByCode(ctx, input.tenantCode);
-            if (tenant) roleIds = [tenant.parentRoleId as string];
-        }
-
-        if (roleIds.length === 0) {
-            Logger.warn(`No role for admin ${input.email}`, 'TenantService');
-            return;
-        }
-
-        await this.administratorService.create(ctx, {
-            firstName: input.firstName || 'Admin',
-            lastName: input.lastName || '',
+        const createdUser = await this.externalAuthenticationService.createAdministratorAndUser(ctx, {
+            strategy: ZITADEL_STRATEGY_NAME,
+            externalIdentifier: input.zitadelUserId,
+            identifier: input.email,
             emailAddress: input.email,
-            password: input.password || 'changeme123',
-            roleIds,
-            // customFields is typed as JSON in CreateAdministratorInput
-            customFields: tenant ? { tenant } as any : undefined,
+            firstName: input.firstName || input.email,
+            lastName: input.lastName || '',
+            roles: [],
         });
-
-        Logger.info(`Created admin: ${input.email} (${input.role || 'tenant-admin'})`, 'TenantService');
+        const tenant = input.role === 'tenant-admin' && input.tenantCode ? await this.findByCode(ctx, input.tenantCode) : null;
+        const administrator = await this.administratorService.findOneByUserId(ctx, createdUser.id);
+        if (tenant && administrator) {
+            await this.administratorService.update(ctx, { id: administrator.id, customFields: { tenant } });
+        }
+        Logger.info(`Created admin: ${input.email} (ZITADEL ${input.zitadelUserId})`, 'TenantService');
     }
 
+    /** With passwords off, ZITADEL is the only way in: ending the sessions is enough (no soft delete). */
     async deactivateAdmin(ctx: RequestContext, email: string) {
         const { items } = await this.administratorService.findAll(ctx, {
             filter: { emailAddress: { eq: email } },
-        });
-        if (items.length > 0) {
-            await this.administratorService.softDelete(ctx, items[0].id);
-            Logger.info(`Deactivated admin: ${email}`, 'TenantService');
+        }, ['user']);
+        for (const administrator of items) {
+            await this.sessionService.deleteSessionsByUser(ctx, administrator.user);
+            Logger.info(`Signed out deactivated admin: ${email}`, 'TenantService');
         }
     }
 
@@ -521,20 +444,30 @@ export class TenantService {
         return channels;
     }
 
-    async getAdminsForRole(ctx: RequestContext, roleId: ID): Promise<Administrator[]> {
-        const role = await this.roleService.findOne(ctx, roleId, ['channels']);
-        if (!role) return [];
-        // Find admins who have this role via AdministratorService
-        const { items: allAdmins } = await this.administratorService.findAll(ctx, { take: 1000 });
-        // Filter to admins that have this specific role
-        const adminsWithRole: Administrator[] = [];
-        for (const admin of allAdmins) {
-            const adminWithUser = await this.administratorService.findOne(ctx, admin.id, ['user.roles']);
-            if (adminWithUser?.user?.roles?.some(r => String(r.id) === String(roleId))) {
-                adminsWithRole.push(adminWithUser);
-            }
-        }
-        return adminsWithRole;
+    /** A SuperAdmin sees everything; anyone else only the stores their role lets them view, and the companies and organizations above them. */
+    private async readableCompany(ctx: RequestContext, company: Company): Promise<CompanyWithRelations | null> {
+        const tenants = await Promise.all((company.tenants ?? []).map(tenant => this.readableTenant(ctx, tenant)));
+        const readableTenants = tenants.filter((tenant): tenant is TenantWithRelations => tenant !== null);
+        if (readableTenants.length === 0 && !this.canReadEveryStore(ctx)) return null;
+        return Object.assign(company, {
+            tenants: readableTenants,
+            channels: readableTenants.flatMap(tenant => tenant.channels),
+        });
+    }
+
+    private async readableTenant(ctx: RequestContext, tenant: Tenant): Promise<TenantWithRelations | null> {
+        const canReadEveryStore = this.canReadEveryStore(ctx);
+        const tenantChannels = await this.getChannelsForTenant(tenant.id);
+        const channels = canReadEveryStore
+            ? tenantChannels
+            : tenantChannels.filter(channel => ctx.userHasPermissions([Permission.ReadChannel], channel.id));
+        if (channels.length === 0 && !canReadEveryStore) return null;
+        const administrators = await this.getAdminsForTenant(tenant.id);
+        return Object.assign(tenant, { channels, administrators });
+    }
+
+    private canReadEveryStore(ctx: RequestContext): boolean {
+        return ctx.userHasPermissions([Permission.SuperAdmin]);
     }
 
     // ========================================================================
@@ -551,25 +484,6 @@ export class TenantService {
         const customerRole = await this.roleService.getCustomerRole(ctx);
         await this.roleService.assignRoleToChannel(ctx, superAdminRole.id, channelId);
         await this.roleService.assignRoleToChannel(ctx, customerRole.id, channelId);
-    }
-
-    /**
-     * Ensures the SuperAdmin role has access to all channels.
-     * Fallback for cases where assignBuiltInRolesToChannel wasn't called.
-     */
-    private async syncSuperAdminChannels() {
-        const allChannels = await this.connection.rawConnection.getRepository(Channel).find();
-        const saRole = await this.connection.rawConnection.getRepository(Role).findOne({
-            where: { code: '__super_admin_role__' },
-            relations: { channels: true },
-        });
-        if (!saRole) return;
-        const existingIds = new Set(saRole.channels.map(c => Number(c.id)));
-        const missing = allChannels.filter(c => !existingIds.has(Number(c.id)));
-        if (missing.length > 0) {
-            saRole.channels.push(...missing);
-            await this.connection.rawConnection.getRepository(Role).save(saRole);
-        }
     }
 
     // ========================================================================

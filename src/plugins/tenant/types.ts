@@ -14,7 +14,6 @@ export interface SyncCompanyInput {
   code: string;
   name?: string;
   enabled?: boolean;
-  admin?: AdminInput;
 }
 
 export interface SyncTenantInput {
@@ -22,7 +21,6 @@ export interface SyncTenantInput {
   code: string;
   name?: string;
   enabled?: boolean;
-  admin?: AdminInput;
 }
 
 export interface SyncChannelInput {
@@ -121,22 +119,13 @@ export interface SyncInvoiceInput {
   erpChannelId?: string;
 }
 
-export interface AdminInput {
-  email: string;
-  password?: string;
-  firstName?: string;
-  lastName?: string;
-}
-
 export interface SyncAdminInput {
-  companyCode?: string;
+  zitadelUserId?: string;
   tenantCode?: string;
   email: string;
-  password?: string;
   firstName?: string;
   lastName?: string;
   role?: "company-admin" | "tenant-admin" | "store-staff";
-  channelCodes?: string[];
 }
 
 // ---- Create input types (used by GraphQL resolver) ----
@@ -281,7 +270,6 @@ export interface RemoveProductFromChannelInput {
 
 export interface CompanyWithRelations extends Company {
   channels: Channel[];
-  administrators: Administrator[];
 }
 
 export interface TenantWithRelations extends Tenant {

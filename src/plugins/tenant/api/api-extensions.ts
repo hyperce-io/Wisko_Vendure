@@ -47,7 +47,6 @@ export const adminApiExtensions = gql`
         parentRoleId: ID!
         tenants: [Tenant!]!
         channels: [TenantChannel!]!
-        administrators: [TenantAdmin!]!
     }
 
     type CompanyList {
