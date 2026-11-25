@@ -6,6 +6,7 @@ import {
     Administrator,
     AdministratorService,
     Channel,
+    ConfigService,
     ExternalAuthenticationService,
     ID,
     idsAreEqual,
@@ -61,6 +62,7 @@ export class WiskoRoleService {
         private administratorService: AdministratorService,
         private externalAuthenticationService: ExternalAuthenticationService,
         private sessionService: SessionService,
+        private configService: ConfigService,
     ) {}
 
     async applyUserRoles(ctx: RequestContext, message: UserRolesMessage, catalog: VendureRoleCatalog): Promise<void> {
@@ -168,7 +170,13 @@ export class WiskoRoleService {
     private wantedRoles(message: UserRolesMessage, catalog: VendureRoleCatalog): WantedRole[] {
         const scopedTicks = message.roles.filter(tick => tick.scopes.length > 0);
         if (!scopedTicks.some(tick => tick.role === ACCESS_ROLE)) return [];
-        const validPermissions = this.roleService.getAllPermissions();
+        // getAllPermissions lists Vendure's own permissions only; plugins add theirs (e.g. the FAQ plugin's) as custom ones.
+        const validPermissions = [
+            ...this.roleService.getAllPermissions(),
+            ...this.configService.authOptions.customPermissions.flatMap(definition =>
+                definition.getMetadata().map(metadata => metadata.name),
+            ),
+        ];
         const isPermission = (name: string): name is Permission => validPermissions.includes(name);
 
         const rolesByScope = scopedTicks.reduce((groups, tick) => {
