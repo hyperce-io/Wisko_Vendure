@@ -25,7 +25,11 @@ declare global {
             ZITADEL_SERVICE_TOKEN: string;
             ZITADEL_SESSION_HOURS: string;
             VENDURE_URL: string;
-            WISKO_VENDURE_PASSWORD_LOGIN: string;
+            SMTP_HOST: string;
+            SMTP_PORT: string;
+            SMTP_USER: string;
+            SMTP_PASS: string;
+            SMTP_FROM_EMAIL: string;
         }
     }
 }
