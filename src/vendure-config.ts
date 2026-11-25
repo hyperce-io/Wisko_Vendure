@@ -38,13 +38,13 @@ export const config: VendureConfig = {
     },
     authOptions: {
         tokenMethod: ['bearer', 'cookie'],
-        // Staff sign in through ZITADEL only (src/plugins/zitadel); passwords stay for customers. Applies to customers too.
+        // Staff sign in through ZITADEL (src/plugins/zitadel); Vendure's own email and password sign-in stays available too.
         sessionDuration: `${zitadelSessionHours}h`,
         // The worker ends sessions and changes roles (ZITADEL role sync, account check); the server's in-memory cache re-reads them after 15 s.
         sessionCacheStrategy: new DefaultSessionCacheStrategy({ ttl: 15_000 }),
         adminAuthenticationStrategy: [
             new ZitadelAuthenticationStrategy(),
-            ...(process.env.WISKO_VENDURE_PASSWORD_LOGIN === 'on' ? [new NativeAuthenticationStrategy()] : []),
+            new NativeAuthenticationStrategy(),
         ],
         superadminCredentials: {
             identifier: process.env.SUPERADMIN_USERNAME,
