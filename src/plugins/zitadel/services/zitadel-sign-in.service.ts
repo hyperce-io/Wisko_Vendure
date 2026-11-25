@@ -1,7 +1,7 @@
 // Who may sign in through ZITADEL: an admin linked to the ZITADEL account (made by the ERP sync) who holds
 // "Store: access", or a platform administrator (created on first sign-in, as in the other Wisko apps).
 import { Injectable } from '@nestjs/common';
-import { AdministratorService, ExternalAuthenticationService, RoleService, User } from '@vendure/core';
+import { AdministratorService, ExternalAuthenticationService, RoleService, SessionService, User } from '@vendure/core';
 
 import { ZITADEL_STRATEGY_NAME } from '../constants';
 import { SignInRefused } from '../oidc';
@@ -17,6 +17,7 @@ export class ZitadelSignInService {
         private administratorService: AdministratorService,
         private roleService: RoleService,
         private wiskoRoleService: WiskoRoleService,
+        private sessionService: SessionService,
     ) {}
 
     async findAdminUser(identity: ZitadelIdentity): Promise<User> {
@@ -44,5 +45,15 @@ export class ZitadelSignInService {
         if (!administrator) throw new SignInRefused(`${identity.email} is not a Store administrator`);
         await this.wiskoRoleService.setPlatformAdmin(ctx, administrator, identity.isPlatformAdmin);
         return user;
+    }
+
+    /** ZITADEL ended this person's Wisko sign-in (back-channel logout): their Store sessions end too, so the next visit
+     * signs in again as whoever is signed in to Wisko then. False when no Store admin is linked to them. */
+    async endSessions(zitadelUserId: string): Promise<boolean> {
+        const ctx = await this.contextService.superAdminContext();
+        const user = await this.externalAuthenticationService.findAdministratorUser(ctx, ZITADEL_STRATEGY_NAME, zitadelUserId);
+        if (!user) return false;
+        await this.sessionService.deleteSessionsByUser(ctx, user);
+        return true;
     }
 }
