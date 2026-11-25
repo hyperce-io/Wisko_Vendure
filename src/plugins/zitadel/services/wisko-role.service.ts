@@ -73,6 +73,10 @@ export class WiskoRoleService {
             ? await this.administratorService.findOneByUserId(ctx, user.id, ['user', 'user.roles'])
             : undefined;
         if (!user || !administrator) {
+            if (this.isStoreAccessWanted(message)) {
+                // The ERP sync creates the admin moments after the ZITADEL account: the consumer retries, then dead-letters.
+                throw new Error(`no Vendure admin is linked to ${message.email ?? message.zitadelUserId} yet`);
+            }
             Logger.verbose(`user.roles for ${message.zitadelUserId}: no Vendure admin is linked to it; skipped`, loggerCtx);
             return;
         }
@@ -149,6 +153,16 @@ export class WiskoRoleService {
         if (coveringRoles.length) {
             Logger.info(`Added new channel ${channelId} to ${coveringRoles.length} wisko: roles`, loggerCtx);
         }
+    }
+
+    /** Someone the ERP makes a Store admin for: active, not a platform admin, holding "Store: access" for some place. */
+    private isStoreAccessWanted(message: UserRolesMessage): boolean {
+        return (
+            message.active &&
+            !message.deleted &&
+            !message.platformAdmin &&
+            message.roles.some(tick => tick.role === ACCESS_ROLE && tick.scopes.length > 0)
+        );
     }
 
     private wantedRoles(message: UserRolesMessage, catalog: VendureRoleCatalog): WantedRole[] {
