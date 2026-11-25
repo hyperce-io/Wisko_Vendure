@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post, Query, Req, Res } from '@nestjs/common';
 import {
     AuthService,
     ConfigService,
@@ -23,7 +23,7 @@ import {
     ZITADEL_PLUGIN_OPTIONS,
     ZITADEL_STRATEGY_NAME,
 } from '../constants';
-import { authorizeUrl, endSessionUrl, finishSignIn, SignInRefused, startSignIn } from '../oidc';
+import { authorizeUrl, endSessionUrl, finishSignIn, InvalidToken, SignInRefused, startSignIn, verifiedLogout } from '../oidc';
 import { ZitadelSignInService } from '../services/zitadel-sign-in.service';
 import { ZitadelPluginOptions } from '../types';
 
@@ -103,6 +103,21 @@ export class ZitadelAuthController {
         setSessionToken({ sessionToken: '', rememberMe: false, authOptions: this.configService.authOptions, req, res });
         if (req.session) req.session.wiskoSignedIn = null;
         return res.redirect(endSessionUrl(this.options, this.dashboardLoginUrl({ [SIGNED_OUT_QUERY]: '1' })));
+    }
+
+    @Post('backchannel-logout')
+    async backchannelLogout(@Body('logout_token') logoutToken: unknown, @Res() res: Response) {
+        if (typeof logoutToken !== 'string') return res.status(400).end();
+        try {
+            const { zitadelUserId } = await verifiedLogout(this.options, logoutToken);
+            const hasEnded = await this.signInService.endSessions(zitadelUserId);
+            Logger.info(`Back-channel logout of ${zitadelUserId}: ${hasEnded ? 'Store sessions ended' : 'no Store admin'}`, loggerCtx);
+            return res.status(200).end();
+        } catch (error) {
+            if (!(error instanceof InvalidToken)) throw error;
+            Logger.warn(`Back-channel logout refused: ${error.message}`, loggerCtx);
+            return res.status(400).end();
+        }
     }
 
     private callbackUrl(): string {

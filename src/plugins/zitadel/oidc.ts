@@ -1,13 +1,17 @@
 // The OpenID Connect code flow with ZITADEL (state, nonce, PKCE) and the checks on the ID token it returns
 // (signature from ZITADEL's published keys, issuer, audience, expiry, nonce). Same rules as wisko_strapi src/zitadel/oidc.ts.
+// Logout tokens (OIDC Back-Channel Logout) are checked the same way.
 import { createHash, createPublicKey, randomBytes, verify, webcrypto, type KeyObject } from 'node:crypto';
 
 import { ACCESS_ROLE, CATALOG_APP_KEY, PLATFORM_ADMIN_ROLE, ROLES_CLAIM } from './constants';
 import { PendingSignIn, ZitadelIdentity, ZitadelPluginOptions } from './types';
 
 export class SignInRefused extends Error {}
+/** A token that is not ZITADEL's, not for this app, or out of date (unlike ZITADEL's keys being unreachable). */
+export class InvalidToken extends Error {}
 
 const CLOCK_SKEW_SECONDS = 60;
+const BACKCHANNEL_LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout';
 const REQUEST_TIMEOUT_MS = 10000;
 
 const randomValue = () => randomBytes(32).toString('base64url');
@@ -96,7 +100,17 @@ export const finishSignIn = async (
     };
 };
 
-// ---- ID token check ----
+/** The person whose Wisko sign-in ZITADEL ended, from a logout token it signed for this app. */
+export const verifiedLogout = async (options: ZitadelPluginOptions, logoutToken: string): Promise<{ zitadelUserId: string }> => {
+    const claims = await verifiedClaims(options, logoutToken);
+    const { events } = claims;
+    if (!events || typeof events !== 'object' || !(BACKCHANNEL_LOGOUT_EVENT in events)) throw new InvalidToken('Not a logout token');
+    if ('nonce' in claims) throw new InvalidToken('A logout token has no nonce');
+    if (typeof claims.sub !== 'string' || !claims.sub) throw new InvalidToken('Logout token has no sub');
+    return { zitadelUserId: claims.sub };
+};
+
+// ---- Token check ----
 
 const signingKeys = new Map<string, KeyObject>();
 
@@ -110,35 +124,41 @@ const loadSigningKeys = async (options: ZitadelPluginOptions): Promise<void> => 
     }
 };
 
-const decodePart = (part: string): Record<string, unknown> => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+const decodePart = (part: string): Record<string, unknown> => {
+    try {
+        return JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+    } catch {
+        throw new InvalidToken('Token is malformed');
+    }
+};
 
 const verifiedClaims = async (options: ZitadelPluginOptions, idToken: string): Promise<Record<string, unknown>> => {
     const [headerPart, payloadPart, signaturePart] = idToken.split('.');
-    if (!headerPart || !payloadPart || !signaturePart) throw new Error('ID token is malformed');
+    if (!headerPart || !payloadPart || !signaturePart) throw new InvalidToken('Token is malformed');
     const header = decodePart(headerPart);
     if (header.alg !== 'RS256' || typeof header.kid !== 'string') {
-        throw new Error(`ID token algorithm ${String(header.alg)} is not accepted`);
+        throw new InvalidToken(`Token algorithm ${String(header.alg)} is not accepted`);
     }
 
     // ZITADEL rotates its keys: an unknown key id means the cached set is old.
     if (!signingKeys.has(header.kid)) await loadSigningKeys(options);
     const key = signingKeys.get(header.kid);
-    if (!key) throw new Error('ID token is signed with an unknown key');
+    if (!key) throw new InvalidToken('Token is signed with an unknown key');
     const isSignatureValid = verify(
         'RSA-SHA256',
         Buffer.from(`${headerPart}.${payloadPart}`),
         key,
         Buffer.from(signaturePart, 'base64url'),
     );
-    if (!isSignatureValid) throw new Error('ID token signature is invalid');
+    if (!isSignatureValid) throw new InvalidToken('Token signature is invalid');
 
     const claims = decodePart(payloadPart);
     const now = Math.floor(Date.now() / 1000);
     const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    if (claims.iss !== options.issuer) throw new Error('ID token issuer does not match');
-    if (!audience.includes(options.clientId)) throw new Error('ID token is not for this app');
-    if (claims.azp !== undefined && claims.azp !== options.clientId) throw new Error('ID token was issued to another app');
-    if (typeof claims.exp !== 'number' || claims.exp + CLOCK_SKEW_SECONDS < now) throw new Error('ID token has expired');
-    if (typeof claims.iat === 'number' && claims.iat - CLOCK_SKEW_SECONDS > now) throw new Error('ID token is issued in the future');
+    if (claims.iss !== options.issuer) throw new InvalidToken('Token issuer does not match');
+    if (!audience.includes(options.clientId)) throw new InvalidToken('Token is not for this app');
+    if (claims.azp !== undefined && claims.azp !== options.clientId) throw new InvalidToken('Token was issued to another app');
+    if (typeof claims.exp !== 'number' || claims.exp + CLOCK_SKEW_SECONDS < now) throw new InvalidToken('Token has expired');
+    if (typeof claims.iat === 'number' && claims.iat - CLOCK_SKEW_SECONDS > now) throw new InvalidToken('Token is issued in the future');
     return claims;
 };
